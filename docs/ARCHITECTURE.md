@@ -117,9 +117,11 @@ Two listeners are wired at startup:
 `Director.frame(mono)` on the render thread, every frame:
 
 1. **Drain events** into a pending list.
-2. **Sync state**: `compute_state(snapshot)` — ERROR when offline with nothing ever published, else the
-   `main_event.phase` (pregame / live / intermission / postgame), else OFFSEASON if every `<sport>.season`
-   says so, else OFFDAY; BOOT for the first 4 s. A state change resets the playlist cursor to the first
+2. **Sync state**: `compute_state(snapshot, now, pregame_hours)` — ERROR when offline with nothing ever
+   published, else the `main_event.phase` (pregame / live / intermission / postgame), else OFFSEASON if every
+   `<sport>.season` says so, else OFFDAY; BOOT for the first 4 s. A `pregame` phase is GAMEDAY until the start
+   is `sports.pregame_hours` away (default 1 h) and PREGAME from then on, so the day of a game can run a
+   longer rotation and the matchup board takes over as the start nears. A state change resets the playlist cursor to the first
    entry and restarts its clock.
 3. **Select**, in priority order: a UI override (`POST /api/override`, time-limited); the event board
    already playing; the first pending event some event board `matches()` (it becomes the active event);

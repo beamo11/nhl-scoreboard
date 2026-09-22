@@ -214,7 +214,8 @@ class Director:
         if self._cursor.state == AppState.BOOT:
             if mono - self._booted_at < BOOT_SECONDS:
                 return
-        new_state = compute_state(snap)
+        cfg = self._config.get()
+        new_state = compute_state(snap, self._now(cfg), cfg.sports.pregame_hours)
         if new_state != self._cursor.state:
             log.info("state %s -> %s", self._cursor.state.value, new_state.value)
             self._cursor = Cursor(new_state, 0, mono)

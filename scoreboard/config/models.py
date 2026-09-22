@@ -120,6 +120,20 @@ class Playlists(FrozenModel):
         PlaylistEntry(board="nhl.standings", duration=None),
         PlaylistEntry(board="holidays.countdown", duration=None),
     )
+    gameday: tuple[PlaylistEntry, ...] = (
+        PlaylistEntry(board="weather.alerts", duration=None),
+        PlaylistEntry(board="nhl.game", duration=15),
+        PlaylistEntry(board="nfl.game", duration=15),
+        PlaylistEntry(board="ncaaf.game", duration=15),
+        PlaylistEntry(board="mlb.game", duration=15),
+        PlaylistEntry(board="ncaah.game", duration=15),
+        PlaylistEntry(board="ahl.game", duration=15),
+        PlaylistEntry(board="nhl.team_summary", duration=10),
+        PlaylistEntry(board="clock", duration=10),
+        PlaylistEntry(board="nhl.ticker", duration=None),
+        PlaylistEntry(board="nhl.standings", duration=None),
+        PlaylistEntry(board="holidays.countdown", duration=None),
+    )
     pregame: tuple[PlaylistEntry, ...] = (
         PlaylistEntry(board="weather.alerts", duration=None),
         PlaylistEntry(board="nhl.game", duration=15),
@@ -190,6 +204,7 @@ class LogosConfig(FrozenModel):
 
 class SportsConfig(FrozenModel):
     priority: list[Literal["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"]] = Field(["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"], description="When two sports have a game, which wins the screen (live games always win)")
+    pregame_hours: float = Field(1.0, ge=0, le=24, description="Hours before the start that the pregame playlist takes over; until then a day with a game plays the game-day playlist. 0 = pregame only once the start time has passed")
     game_day_rollover_hour: int = Field(10, ge=0, le=12, description="Keep last night's finals in the ticker until this hour of the morning (local time); 0 = they leave at midnight. Today's games always show as soon as the date turns")
 
 

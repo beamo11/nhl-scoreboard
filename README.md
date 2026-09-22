@@ -47,7 +47,7 @@ Open http://localhost:8080 — the dashboard shows exactly what the matrix shows
 Background **sources** fetch each league and each extra on their own cadence and publish plain dicts into
 an immutable **snapshot**. **Detectors** diff consecutive snapshots into events (goal, touchdown, weather
 warning, plane overhead). Thirty times a second the **director** works out the app state from the snapshot
-(off-season, off day, pregame, live, intermission, postgame), picks a **board** from that state's playlist
+(off-season, off day, game day, pregame, live, intermission, postgame), picks a **board** from that state's playlist
 or lets an event board interrupt, and asks it to draw a frame. Boards are pure: snapshot in, image out.
 The frame goes to the panel and to a browser preview. Every setting is a pydantic model, so the web UI is
 generated from the schema and edits apply on the next frame.

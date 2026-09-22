@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from PIL import Image
 
@@ -453,3 +453,31 @@ def test_keep_bright_when_live_covers_the_intermission(tmp_path):
     assert d.state == AppState.INTERMISSION and d.brightness(night) == 90
     snapshots.publish("main_event", {"phase": "postgame"}); d.frame(t + 3)
     assert d.brightness(night) == 10
+
+
+def test_a_game_day_is_gameday_until_the_pregame_window_opens():
+    store = SnapshotStore()
+    snap = store.publish("main_event", {"phase": "pregame", "start_time_utc": "2026-04-11T23:00:00Z"})
+    morning = datetime(2026, 4, 11, 14, 0, tzinfo=UTC)
+    assert compute_state(snap, morning) == AppState.GAMEDAY
+    assert compute_state(snap, datetime(2026, 4, 11, 21, 59, tzinfo=UTC)) == AppState.GAMEDAY
+    assert compute_state(snap, datetime(2026, 4, 11, 22, 0, tzinfo=UTC)) == AppState.PREGAME     # exactly an hour out
+    assert compute_state(snap, datetime(2026, 4, 11, 23, 30, tzinfo=UTC)) == AppState.PREGAME    # start passed, not live yet
+    assert compute_state(snap, morning, pregame_hours=12) == AppState.PREGAME                     # the window is configurable
+    assert compute_state(snap, datetime(2026, 4, 11, 22, 59, tzinfo=UTC), pregame_hours=0) == AppState.GAMEDAY
+    # A game with no readable start time is pregame all day, as before the split.
+    assert compute_state(store.publish("main_event", {"phase": "pregame", "start_time_utc": ""}), morning) == AppState.PREGAME
+    assert compute_state(store.publish("main_event", {"phase": "live", "start_time_utc": "2026-04-11T23:00:00Z"}), morning) == AppState.LIVE
+
+
+def test_director_moves_from_gameday_to_pregame_on_the_clock(tmp_path):
+    config, store, _, d = make(tmp_path)
+    config.update({"transition": {"style": "none"}, "sports": {"pregame_hours": 2},
+                   "playlists": {"gameday": [{"board": "blank", "duration": 5}], "pregame": [{"board": "clock", "duration": 5}]}})
+    store.publish("main_event", {"phase": "pregame", "start_time_utc": (datetime.now(UTC) + timedelta(hours=3)).isoformat()})
+    d.frame(1000.0)
+    d.frame(1000.0 + BOOT_SECONDS + 0.1)
+    assert d.state == AppState.GAMEDAY and d.active_board == "blank"
+    store.publish("main_event", {"phase": "pregame", "start_time_utc": (datetime.now(UTC) + timedelta(minutes=90)).isoformat()})
+    d.frame(1000.0 + BOOT_SECONDS + 0.2)
+    assert d.state == AppState.PREGAME and d.active_board == "clock"

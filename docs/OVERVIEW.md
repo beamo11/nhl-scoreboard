@@ -50,7 +50,7 @@ Think of a newsroom with a wall of screens.
    The event bus runs every detector on (old, new) and queues what they return. The arbiter picks the
    app-wide `main_event` from each sport's candidate.
 3. On the render thread, `Director.frame()` drains the event queue, computes the app **state** from the
-   snapshot (boot / error / offseason / offday / pregame / live / intermission / postgame), and selects a
+   snapshot (boot / error / offseason / offday / gameday / pregame / live / intermission / postgame), and selects a
    board: a forced override from the UI, else the event board for a queued event, else the next entry of
    the state's playlist whose data is present.
 4. If the board changed (or the same event board got a new event), it is `enter()`ed once; then
@@ -79,7 +79,7 @@ Think of a newsroom with a wall of screens.
 | Detector | Pure function `(prev, new) -> events` | `nhl/events.py`, `extras/.../source.py` |
 | Event | `kind`, `team`, `payload`, `ts`; interrupts the playlist | `data/events.py` |
 | Arbiter | Chooses `main_event` across sports: any live game first, then `sports.priority` | `data/arbiter.py` |
-| State | boot / error / offseason / offday / pregame / live / intermission / postgame | `director/state.py` |
+| State | boot / error / offseason / offday / gameday / pregame / live / intermission / postgame | `director/state.py` |
 | Playlist | Ordered board entries per state, from config | `config/models.py`, `director/playlist.py` |
 | Board | Pure renderer: `render(ctx, cfg) -> Image`; optional `enter`, `done`, `auto_seconds`, `auto_items`, `pace_unit` | `boards/base.py` |
 | Event board | Board that plays for an event; never in a playlist (`playlistable = False`) | `boards/base.py` |

@@ -61,8 +61,9 @@ nothing needs a restart.
   score: every airframe that comes into range is logged by tail number, and each row says how many visits it has
   made, with the regulars summed up above the list. The flight boards can show the same count
   (*show sightings*, off by default).
-- **Boards** — per-state playlists. States: *offseason*, *offday* (season on, no game today), *pregame*,
-  *live*, *intermission*, *postgame*. Reorder by dragging a row's grip (⠿) — the list reorders
+- **Boards** — per-state playlists. States: *offseason*, *offday* (season on, no game today), *gameday*
+  (a favourite plays today, the start is still hours off), *pregame* (from *Sports → pregame hours* before
+  the start, one hour by default), *live*, *intermission*, *postgame*. Reorder by dragging a row's grip (⠿) — the list reorders
   under the pointer and saves when you let go, Esc cancels; the arrows still move one place at a
   time. Enable/disable, set seconds. The seconds mean one of two things, and the row says which:
   - For a board that shows a list one item at a time — the score tickers, flights nearby, the holiday
