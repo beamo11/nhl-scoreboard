@@ -167,3 +167,33 @@ async def test_teams_that_arrive_during_a_logo_fetch_get_fetched_afterwards(monk
         assert batches[1] == {"TOR", "BOS", "MTL", "OTT"}
         for t in src._logo_tasks.values():
             t.cancel()
+
+
+@pytest.mark.asyncio
+async def test_a_second_poll_while_the_art_is_still_fetching_does_not_queue_a_repeat(monkeypatch):
+    """CI (a fast Linux loop) polled again between the prefetch finishing and its done callback
+    recording the backoff; 'still missing and due' then queued an identical second run."""
+    fetched, release = [], asyncio.Event()
+
+    async def slow_prefetch(http, sport, abbrevs, log):
+        fetched.append((sport, abbrevs))
+        await release.wait()
+        return 0                                    # nothing lands on disk: still missing afterwards
+
+    monkeypatch.setattr(mod.logos, "prefetch", slow_prefetch)
+    async with httpx.AsyncClient() as http:
+        ctx = SourceContext("follower", SnapshotStore(), lambda: FollowerConfig(), http)
+        source = FollowerSource(cfg)
+        data = {"nhl.scores": [GAME]}
+        source._want_logos(ctx, data)
+        await asyncio.sleep(0)                      # the task starts and blocks in the fake prefetch
+        source._want_logos(ctx, data)               # the next poll round: same teams, art still missing
+        release.set()
+        await asyncio.sleep(0.02)
+        assert fetched == [("nhl", ("MTL", "TOR"))]
+        # New teams seen while a run is in flight are still fetched by a follow-up run.
+        source._want_logos(ctx, {"nhl.scores": [GAME, {"away": {"abbrev": "BOS"}, "home": {"abbrev": "MTL"}}]})
+        await asyncio.sleep(0.02)
+        assert fetched[-1] == ("nhl", ("BOS", "MTL", "TOR"))
+        for task in source._logo_tasks.values():
+            task.cancel()

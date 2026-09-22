@@ -115,7 +115,12 @@ class FollowerSource:
             found = teams_in(sport, data)
             new = found - self._teams.setdefault(sport, set())
             self._teams[sport] |= found
-            due = (asyncio.get_running_loop().time() >= self._logo_retry_at.get(sport, 0.0)
+            # "Still missing" is only news when nothing is fetching it: a run in flight has not
+            # recorded its backoff yet, and queueing a second identical run behind it would
+            # skip that backoff (and, on a slow box, double the CDN requests).
+            running = self._logo_tasks.get(sport)
+            in_flight = running is not None and not running.done()
+            due = (not in_flight and asyncio.get_running_loop().time() >= self._logo_retry_at.get(sport, 0.0)
                    and logos.missing(sport, tuple(self._teams[sport])))
             if not self._teams[sport] or (not new and not refresh_all and not due):
                 continue
