@@ -100,6 +100,16 @@ def test_spec_matches_the_recorded_standings():
     assert check_standings_payload(_fixture("standings_2026-04-10.json")) == []
 
 
+def test_a_team_that_has_not_played_has_no_streak():
+    """Opening day (2026-09-29): every row is 0 GP and the feed leaves streakCode/streakCount
+    out. That is the feed's shape, not drift; a played row without them still is."""
+    played = _fixture("standings_2026-04-10.json")["standings"][0]
+    fresh = {k: v for k, v in played.items() if k not in ("streakCode", "streakCount")}
+    assert check_standings_payload({"standings": [{**fresh, "gamesPlayed": 0}]}) == []
+    assert check_standings_payload({"standings": [fresh]}) == [
+        "standings row missing streakCode", "standings row missing streakCount"]
+
+
 # -- and the live API still matches the spec (opt-in) ---------------------------
 
 @pytest.fixture(scope="module")

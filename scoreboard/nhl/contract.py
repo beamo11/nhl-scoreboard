@@ -23,9 +23,11 @@ TEAM_STARTED_FIELDS = ("abbrev", "score")     # no score on a game that has not 
 PERIOD_FIELDS = ("number", "periodType")
 CLOCK_FIELDS = ("timeRemaining", "running", "inIntermission")
 STANDINGS_FIELDS = ("teamAbbrev", "conferenceName", "divisionName", "gamesPlayed", "wins", "losses",
-                    "otLosses", "points", "l10Wins", "l10Losses", "l10OtLosses", "streakCode",
-                    "streakCount", "divisionSequence", "conferenceSequence", "leagueSequence",
-                    "wildcardSequence")
+                    "otLosses", "points", "l10Wins", "l10Losses", "l10OtLosses", "divisionSequence",
+                    "conferenceSequence", "leagueSequence", "wildcardSequence")
+# No streak until a team has played: on opening day every row is 0 GP and the feed leaves
+# both fields out (confirmed live, 2026-09-29). normalize_standings reads them with defaults.
+STANDINGS_PLAYED_FIELDS = ("streakCode", "streakCount")
 GOAL_FIELDS = ("teamAbbrev", "timeInPeriod", "name", "firstName", "lastName", "goalsToDate",
                "strength", "assists", "awayScore", "homeScore")
 PENALTY_FIELDS = ("teamAbbrev", "timeInPeriod", "type", "duration", "descKey")
@@ -99,7 +101,14 @@ def check_landing(landing: dict[str, Any]) -> list[str]:
 def check_standings_payload(payload: dict[str, Any]) -> list[str]:
     if not payload.get("standings"):
         return ["standings payload has no rows"]
-    return _dedupe(note for row in payload["standings"] for note in _missing(row, STANDINGS_FIELDS, "standings row"))
+    return _dedupe(note for row in payload["standings"] for note in _check_standings_row(row))
+
+
+def _check_standings_row(row: Any) -> list[str]:
+    notes = _missing(row, STANDINGS_FIELDS, "standings row")
+    if isinstance(row, dict) and (row.get("gamesPlayed") or 0) > 0:
+        notes += _missing(row, STANDINGS_PLAYED_FIELDS, "standings row")
+    return notes
 
 
 def _dedupe(notes: Any) -> list[str]:
