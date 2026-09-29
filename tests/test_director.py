@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from PIL import Image
 
-from scoreboard.boards.base import EventBoard
+from scoreboard.boards.base import AUTO_SECONDS, EventBoard
 from scoreboard.boards.blank import BlankBoard
 from scoreboard.boards.clock import ClockBoard
 from scoreboard.boards.splash import SplashBoard
@@ -12,7 +12,7 @@ from scoreboard.data import SnapshotStore
 from scoreboard.data.events import Event, EventBus
 from scoreboard.director import AppState, Director, compute_state
 from scoreboard.director.brightness import brightness_for
-from scoreboard.director.director import AUTO_SECONDS, BOOT_SECONDS
+from scoreboard.director.director import BOOT_SECONDS
 from scoreboard.director.playlist import available_entries
 from scoreboard.plugins import Registry
 
@@ -463,7 +463,33 @@ def test_a_blank_board_alone_in_its_playlist_holds_the_screen(tmp_path):
     d.frame(t + AUTO_SECONDS + 0.5); d.frame(t + AUTO_SECONDS + 0.6)
     assert d.active_board == "clock"
     assert d.rotation(t + AUTO_SECONDS + 1.0)["entries"][0]["elapsed"] > AUTO_SECONDS
-    assert d.rotation(t + 1.0)["entries"][0]["seconds"] is None
+    alone = d.rotation(t + 1.0)["entries"][0]
+    assert alone == {**alone, "seconds": None, "hold": True}
+
+
+class HoldsUnlessSkipped(BlankBoard):
+    """A board that overrides ``done`` only to skip itself — the season countdown's shape
+    before 2026-09-29, when the bench Pi sat on "3 days til puck drop" for five minutes."""
+    key = "holdy"
+    title = "Holdy"
+
+    def done(self, ctx, cfg):
+        return not ctx.snapshot.get("system")
+
+
+def test_a_board_that_only_ever_skips_itself_still_gets_the_default_run(tmp_path):
+    config = ConfigStore(tmp_path / "config.json")
+    config.update({"playlists": {"offday": [{"board": "holdy", "duration": None}, {"board": "clock", "duration": 5}]}})
+    snapshots, events = SnapshotStore(), EventBus()
+    snapshots.publish("system", {"online": True})
+    reg = Registry(boards={b.key: b for b in (ClockBoard(), SplashBoard(), HoldsUnlessSkipped())})
+    d = Director(config, snapshots, reg, events)
+    t = booted(d)
+    assert d.active_board == "holdy"
+    d.frame(t + AUTO_SECONDS - 0.5)
+    assert d.active_board == "holdy"
+    d.frame(t + AUTO_SECONDS + 0.1); d.frame(t + AUTO_SECONDS + 0.2)
+    assert d.active_board == "clock"
 
 
 def test_keep_bright_when_live_covers_the_intermission(tmp_path):

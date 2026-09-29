@@ -35,6 +35,12 @@ class BoardContext:
     pace: float | None = None      # playlist's seconds per item for a paced board (None = the board's default)
 
 
+# What a blank ("auto") playlist duration runs on a board with no length of its own — the
+# clock, a game board, the season countdown. The director applies it when the playlist has
+# anything else to show; alone in its playlist such a board holds the screen.
+AUTO_SECONDS = 15.0
+
+
 @runtime_checkable
 class Board(Protocol):
     key: ClassVar[str]

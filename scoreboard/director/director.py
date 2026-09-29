@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 from pydantic import BaseModel, ValidationError
 
-from ..boards.base import BaseBoard, BoardContext, EventBoard
+from ..boards.base import AUTO_SECONDS, BaseBoard, BoardContext, EventBoard
 from ..config import AppConfig, ConfigStore
 from ..config.models import PlaylistEntry
 from ..data import Event, Snapshot, SnapshotStore
@@ -31,8 +31,10 @@ log = logging.getLogger(__name__)
 
 
 def self_timed(board: BaseBoard) -> bool:
-    """Whether the board ever says it is done: a ticker, a countdown, a paced list — as
-    opposed to the clock or a game board, which draw until something else moves them on."""
+    """Whether the board says itself when it is done: a ticker, a paced list, standings — as
+    opposed to the clock or a game board, which draw until something else moves them on. Only
+    a hint for the web UI (such a board's length may not be known before its first run); the
+    frame loop trusts nothing and caps a blank entry at ``AUTO_SECONDS`` regardless."""
     return type(board).done is not BaseBoard.done or board.pace_unit is not None
 
 
@@ -61,10 +63,6 @@ FALLBACK_BOARD = "clock"
 BOOT_SECONDS = 4.0
 EVENT_MAX_SECONDS = 30.0
 QUARANTINE_SECONDS = 60.0       # a board that raises is skipped for this long
-# A blank ("auto") duration on a board with no length of its own — the clock, a game board —
-# runs this long when the playlist has anything else to show. Alone in its playlist the board
-# simply stays up (the live game board's case); there is nothing to move on to.
-AUTO_SECONDS = 15.0
 STALE_DOT = (200, 40, 40)
 
 
@@ -314,12 +312,14 @@ class Director:
                 "skipped": reason,
                 "active": False,
                 "elapsed": None,
+                "hold": False,
             })
         playing = [x for x in entries if x["skipped"] is None]
         if len(playing) == 1 and playing[0]["auto"] and playing[0]["pace_unit"] is None:
             b = boards.get(playing[0]["board"])
             if b is not None and not self_timed(b):
                 playing[0]["seconds"] = None    # alone, it holds the screen
+                playing[0]["hold"] = True
         index: int | None = None
         cursor = self._cursor
         if playing and cursor is not None and state in PLAYLIST_STATES and not self._active_event and not self.override:
@@ -398,11 +398,17 @@ class Director:
         entry = entries[min(self._cursor.index, len(entries) - 1)]
         # A fixed number is the whole run for most boards; a paced board (ticker, flights...)
         # gets it as seconds per item through ctx.pace instead and says itself when it is done.
-        # A blank on a board that never ends itself is the default run, so long as the playlist
-        # has somewhere else to go: otherwise the rotation would sit on it until the state changed.
+        # A blank is the board's own length, and the default run when it has none, so long as
+        # the playlist has somewhere else to go: otherwise the rotation would sit on the board
+        # until the state changed. Not left to ``done`` alone — a board may override it only to
+        # skip itself (the countdown did) and never otherwise finish.
         seconds = entry.duration
-        if seconds is None and len(entries) > 1 and not self_timed(board):
-            seconds = AUTO_SECONDS
+        if seconds is None and board.pace_unit is None and len(entries) > 1:
+            try:
+                own = board.auto_seconds(ctx, board_cfg)
+            except Exception:
+                own = None
+            seconds = AUTO_SECONDS if own is None else own
         expired = seconds is not None and board.pace_unit is None and ctx.elapsed >= seconds
         if expired or board.done(ctx, board_cfg):
             self._cursor = advance(self._cursor, len(entries), mono)

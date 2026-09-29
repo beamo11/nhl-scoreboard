@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..render import Absolute, Img, Sheen, Slide, Text, VBox, load_font, render_tree
 from ..render.anim import quintic_out
 from ..render.fx import fit_logo
-from .base import BaseBoard, BoardContext
+from .base import AUTO_SECONDS, BaseBoard, BoardContext
 
 NUMBER = (80, 200, 255)
 LABEL = (160, 170, 180)
@@ -70,7 +70,7 @@ class SeasonCountdownBoard(BaseBoard):
         return self._pick(ctx, cfg) is None      # nothing to count down to: skip immediately
 
     def auto_seconds(self, ctx: BoardContext, cfg: CountdownConfig) -> float | None:
-        return 0.0 if self._pick(ctx, cfg) is None else None       # skipped, or held until the playlist moves on
+        return 0.0 if self._pick(ctx, cfg) is None else AUTO_SECONDS    # skipped, or the default run
 
     def render(self, ctx: BoardContext, cfg: CountdownConfig) -> Image.Image:
         w, h = ctx.width, ctx.height
