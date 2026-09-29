@@ -30,6 +30,12 @@ from .transitions import transition
 log = logging.getLogger(__name__)
 
 
+def self_timed(board: BaseBoard) -> bool:
+    """Whether the board ever says it is done: a ticker, a countdown, a paced list — as
+    opposed to the clock or a game board, which draw until something else moves them on."""
+    return type(board).done is not BaseBoard.done or board.pace_unit is not None
+
+
 class _DarkBoard(BaseBoard):
     """Last resort when even the fallback board is missing.
 
@@ -55,6 +61,10 @@ FALLBACK_BOARD = "clock"
 BOOT_SECONDS = 4.0
 EVENT_MAX_SECONDS = 30.0
 QUARANTINE_SECONDS = 60.0       # a board that raises is skipped for this long
+# A blank ("auto") duration on a board with no length of its own — the clock, a game board —
+# runs this long when the playlist has anything else to show. Alone in its playlist the board
+# simply stays up (the live game board's case); there is nothing to move on to.
+AUTO_SECONDS = 15.0
 STALE_DOT = (200, 40, 40)
 
 
@@ -290,6 +300,8 @@ class Director:
                     items = board.auto_items(pctx, board_cfg)
                 except Exception:       # a board must never be able to break the dashboard
                     log.debug("rotation probe failed for board %s", e.board, exc_info=True)
+                if seconds is None and not self_timed(board):
+                    seconds = AUTO_SECONDS      # unless it ends up alone; fixed below
             entries.append({
                 "board": e.board,
                 "title": board.title if board is not None else e.board,
@@ -304,6 +316,10 @@ class Director:
                 "elapsed": None,
             })
         playing = [x for x in entries if x["skipped"] is None]
+        if len(playing) == 1 and playing[0]["auto"] and playing[0]["pace_unit"] is None:
+            b = boards.get(playing[0]["board"])
+            if b is not None and not self_timed(b):
+                playing[0]["seconds"] = None    # alone, it holds the screen
         index: int | None = None
         cursor = self._cursor
         if playing and cursor is not None and state in PLAYLIST_STATES and not self._active_event and not self.override:
@@ -382,7 +398,12 @@ class Director:
         entry = entries[min(self._cursor.index, len(entries) - 1)]
         # A fixed number is the whole run for most boards; a paced board (ticker, flights...)
         # gets it as seconds per item through ctx.pace instead and says itself when it is done.
-        expired = entry.duration is not None and board.pace_unit is None and ctx.elapsed >= entry.duration
+        # A blank on a board that never ends itself is the default run, so long as the playlist
+        # has somewhere else to go: otherwise the rotation would sit on it until the state changed.
+        seconds = entry.duration
+        if seconds is None and len(entries) > 1 and not self_timed(board):
+            seconds = AUTO_SECONDS
+        expired = seconds is not None and board.pace_unit is None and ctx.elapsed >= seconds
         if expired or board.done(ctx, board_cfg):
             self._cursor = advance(self._cursor, len(entries), mono)
 

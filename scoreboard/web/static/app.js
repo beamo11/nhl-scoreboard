@@ -130,7 +130,7 @@ const fmtMs = (ms) => ms == null ? '—' : ms < 1000 ? `${Math.round(ms)} ms` : 
 // than leaving the field reading "auto" with no number anywhere.
 const fmtSecs = (s) => s < 90 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
 const autoLabel = (b) => !b ? ''
-  : b.auto_seconds == null ? (b.self_timed ? 'auto · length not known yet' : 'auto · until the state changes')
+  : b.auto_seconds == null ? (b.self_timed ? 'auto · length not known yet' : 'auto · 15s, or holds the screen when alone')
   : b.auto_seconds < 0.5 ? 'auto · skipped, nothing to show'
   : `auto ≈ ${fmtSecs(b.auto_seconds)}`;
 // A paced board (ticker, flights, holidays, alerts) takes the number as seconds per item, so
@@ -144,7 +144,7 @@ const pacedLabel = (b, duration) => {
   return `${duration == null ? 'auto · ' : ''}${plural(count, b.pace_unit)} ≈ ${fmtSecs(total)}`;
 };
 const SKIPPED_HINT = "An interrupt board plays when its event happens (a goal, a flight overhead, a weather alert) and is passed over in the rotation. Remove it from the playlist or leave it; it makes no difference.";
-const AUTO_HINT = "Blank means auto: the board runs its own length instead of a fixed one. That length follows how much there is to show (games, pages, aircraft), so it moves with the data — and a board with no length of its own stays up until the state changes.";
+const AUTO_HINT = "Blank means auto: the board runs its own length instead of a fixed one. That length follows how much there is to show (games, pages, aircraft), so it moves with the data. A board with no length of its own (the clock, a game board) gets 15 s, or holds the screen when it is the only board in the playlist.";
 const PACED_HINT = (unit) => `Seconds each ${unit} stays up; the board goes through every ${unit} and then moves on. Blank uses the board's own setting (Settings → the board's section).`;
 
 function useSources(intervalMs = 3000) {

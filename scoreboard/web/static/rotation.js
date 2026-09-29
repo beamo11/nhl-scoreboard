@@ -50,7 +50,7 @@ function Slice({ e }) {
   const progress = e.active && !open && e.seconds > 0 ? Math.min(e.elapsed / e.seconds, 1) : 0;
   const count = e.count != null && e.unit ? plural(e.count, e.unit) : '';
   const each = e.pace_unit ? `${fmtSecs(e.duration != null ? e.duration : e.count ? e.seconds / e.count : null)} each` : '';
-  const length = open ? 'until state changes' : `${e.auto || e.pace_unit ? '≈' : ''}${fmtSecs(e.seconds)}`;
+  const length = open ? 'holds the screen' : `${e.auto || e.pace_unit ? '≈' : ''}${fmtSecs(e.seconds)}`;
   const title = `${e.title}${count ? ` · ${count}` : ''} · ${length}${each ? ` · ${each}` : ''}${e.auto ? ' (auto)' : ''}${e.active ? ` · ${fmtSecs(e.elapsed)} in` : ''}`;
   return html`<div class=${['seg', 'fam-' + family(e.board), e.active ? 'active' : '', open ? 'open' : ''].join(' ').trim()} title=${title}>
     <div class="count">${count || ' '}</div>

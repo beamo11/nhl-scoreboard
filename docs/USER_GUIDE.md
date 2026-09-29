@@ -73,10 +73,9 @@ nothing needs a restart.
     board's own per-item setting from its section on the Settings page.
   - For every other board the number is how long the board shows, full stop. Leave it blank for "auto" —
     the board runs its own length. The row then shows what that works out to right now (`auto ≈ 24s`).
-    A board with no length of its own says `auto · until the state changes` — it holds the screen until the
-    state does (that is what the *live* game board wants), so give it seconds if you want the playlist to
-    move on. Standings and team summary only know their length after they have run once (`auto · length not
-    known yet` until then).
+    A board with no length of its own (the clock, a game board) runs 15 s on auto, or holds the screen when
+    it is the only board in the playlist (that is what the *live* game board wants). Standings and team
+    summary only know their length after they have run once (`auto · length not known yet` until then).
 - **Settings** — every option, grouped: Display, Location & time, Brightness (fixed / sunrise-sunset / hours),
   Appearance (transition between boards, logos, and Sports: priority, and the game-day rollover hour: last night's
   finals stay in the ticker until then — today's games show as soon as the date turns, and the postgame board still

@@ -46,7 +46,7 @@ class MyBoard(BaseBoard):
     def done(self, ctx, cfg) -> bool:       # optional: self-terminating boards (tickers/scrollers)
         return ctx.elapsed > 10
     def auto_seconds(self, ctx, cfg):       # override alongside done: the same length, as a number
-        return 10.0                         # None = never ends itself; the web UI prints this next to "auto"
+        return 10.0                         # None = never ends itself (auto = the default 15 s); the web UI prints this next to "auto"
     def auto_items(self, ctx, cfg):         # optional: what a run is made of, for the dashboard's rotation view
         return len(ctx.snapshot.get("my.latest") or []), "item"     # (count, singular unit) or None
 ```

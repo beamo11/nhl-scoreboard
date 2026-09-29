@@ -21,13 +21,13 @@ from pydantic import ValidationError
 from starlette.types import Scope
 
 from .. import __version__
-from ..boards.base import BaseBoard
 from ..config import ConfigStore
 from ..config.models import deep_merge
 from ..config.schema import app_schema
 from ..data import SnapshotStore
 from ..data.health import SourceHealth
 from ..director import Director
+from ..director.director import self_timed
 from ..output import PreviewHub
 from ..plugins import Registry
 from ..sim import SimulatorHub
@@ -234,10 +234,10 @@ def create_app(
                 "event": hasattr(b, "event_kinds"),
                 "playlistable": b.playlistable,       # False: plays on its event, never from a playlist
                 # What an "auto" playlist duration works out to, and whether the board ends
-                # itself at all. auto_seconds is null both for a board that never ends (the
-                # playlist holds it until the state changes) and for one whose length is only
-                # known once it has been built, so the UI needs both to word the hint.
-                "self_timed": type(b).done is not BaseBoard.done,
+                # itself at all. auto_seconds is null both for a board that never ends (it gets
+                # the default run, or holds the screen when it is alone in the playlist) and for
+                # one whose length is only known once it has been built, so the UI needs both.
+                "self_timed": self_timed(b),
                 "auto_seconds": director.auto_seconds(b),
                 # A paced board takes the playlist's seconds per item (unit named here) and
                 # ends itself; ``items`` is what it would show right now, as (count, unit).

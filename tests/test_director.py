@@ -12,7 +12,7 @@ from scoreboard.data import SnapshotStore
 from scoreboard.data.events import Event, EventBus
 from scoreboard.director import AppState, Director, compute_state
 from scoreboard.director.brightness import brightness_for
-from scoreboard.director.director import BOOT_SECONDS
+from scoreboard.director.director import AUTO_SECONDS, BOOT_SECONDS
 from scoreboard.director.playlist import available_entries
 from scoreboard.plugins import Registry
 
@@ -437,6 +437,33 @@ def test_a_number_on_an_unpaced_board_is_still_the_whole_run(tmp_path):
     t = booted(d)
     d.frame(t + 5.2); d.frame(t + 5.3)
     assert d.active_board == "blank"
+
+
+def test_a_blank_on_a_board_with_no_length_of_its_own_is_the_default_run(tmp_path):
+    """The bench Pi sat on the clock for an hour (2026-09-29): its off-day entry was blank and
+    the clock never ends itself. Blank now means the default run when there is anywhere to go."""
+    config, _, _, d = make(tmp_path)
+    config.update({"playlists": {"offday": [{"board": "clock", "duration": None}, {"board": "blank", "duration": 5}]}})
+    t = booted(d)
+    assert d.active_board == "clock"
+    d.frame(t + AUTO_SECONDS - 0.5)
+    assert d.active_board == "clock"
+    d.frame(t + AUTO_SECONDS + 0.1); d.frame(t + AUTO_SECONDS + 0.2)
+    assert d.active_board == "blank"
+    clock = d.rotation(t + 1.0)["entries"][0]
+    assert clock == {**clock, "auto": True, "seconds": AUTO_SECONDS, "duration": None}
+
+
+def test_a_blank_board_alone_in_its_playlist_holds_the_screen(tmp_path):
+    """What the live game board wants: nothing else to show, so nothing to move on to, and no
+    re-entry every 15 s to restart its animations."""
+    config, _, _, d = make(tmp_path)
+    config.update({"playlists": {"offday": [{"board": "clock", "duration": None}]}})
+    t = booted(d)
+    d.frame(t + AUTO_SECONDS + 0.5); d.frame(t + AUTO_SECONDS + 0.6)
+    assert d.active_board == "clock"
+    assert d.rotation(t + AUTO_SECONDS + 1.0)["entries"][0]["elapsed"] > AUTO_SECONDS
+    assert d.rotation(t + 1.0)["entries"][0]["seconds"] is None
 
 
 def test_keep_bright_when_live_covers_the_intermission(tmp_path):

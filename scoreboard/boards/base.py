@@ -84,9 +84,9 @@ class BaseBoard:
         """Seconds a run lasts when the playlist entry says "auto" — for the web UI, which
         would otherwise only be able to say "auto" and leave the length a mystery.
 
-        None means the board never ends on its own: on "auto" the playlist stays on it
-        until the app state changes or an event interrupts. Boards that override ``done``
-        should override this too, with the same length ``done`` waits for.
+        None means the board never ends on its own: on "auto" the director gives it the
+        default run (``AUTO_SECONDS``), or holds it when it is alone in the playlist. Boards
+        that override ``done`` should override this too, with the same length ``done`` waits for.
         """
         return None
 
