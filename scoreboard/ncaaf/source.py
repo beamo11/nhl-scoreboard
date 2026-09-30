@@ -31,7 +31,7 @@ class NcaafConfig(BaseModel):
     live_interval: float = Field(20.0, ge=10, le=120, description="Seconds between polls while a favourite is playing", json_schema_extra=ADVANCED)
     idle_interval: float = Field(300.0, ge=60, le=3600, json_schema_extra=ADVANCED)
     standings_interval: float = Field(3600.0, ge=600, json_schema_extra=ADVANCED)
-    show_games_within_days: int = Field(2, ge=0, le=30, description="Only show the week's slate when the next game is this close")
+    show_games_within_days: int = Field(2, ge=0, le=30, description="Show upcoming games this many days ahead (results and games in progress always show)")
 
 
 def slate(games: list[dict[str, Any]], cfg: NcaafConfig) -> list[dict[str, Any]]:

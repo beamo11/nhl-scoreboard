@@ -32,7 +32,7 @@ class NflConfig(BaseModel):
     live_interval: float = Field(20.0, ge=10, le=120, description="Seconds between polls while a favourite is playing", json_schema_extra=ADVANCED)
     idle_interval: float = Field(300.0, ge=60, le=3600, json_schema_extra=ADVANCED)
     standings_interval: float = Field(3600.0, ge=600, json_schema_extra=ADVANCED)
-    show_games_within_days: int = Field(2, ge=0, le=30, description="Only show the week's slate when the next game is this close")
+    show_games_within_days: int = Field(2, ge=0, le=30, description="Show upcoming games this many days ahead (results and games in progress always show)")
 
 
 class NflSource:
@@ -108,12 +108,9 @@ class NflSource:
                 ctx.publish(self._season(games, today, calendar=season_calendar(payload)), subkey="season")
                 slate = self._slate(games, cfg)
                 ctx.publish([g for g in slate if 0 <= _days(today, g["date"]) <= cfg.show_games_within_days], subkey="schedule")
-                # The gate looks at the slate, not the whole week: an unranked Thursday game must not
-                # put Saturday's ranked slate on the ticker days early (college has midweek games).
-                upcoming = [g for g in slate if g["phase"] != "postgame"]
-                nearest = min((g["date"] for g in upcoming), default=None)
-                if nearest and _days(today, nearest) > cfg.show_games_within_days and not any(g["phase"] in ("live", "intermission") for g in slate):
-                    slate = [g for g in slate if g["phase"] == "postgame"]        # keep results, hide far-off games
+                # ESPN hands us the whole week; results and games in progress always show, an upcoming
+                # game only once it is within the window (a Thursday game must not drag Sunday's in).
+                slate = [g for g in slate if g["phase"] != "pregame" or _days(today, g["date"]) <= cfg.show_games_within_days]
                 main = select_main_event(games, cfg.favorites, today=today, timezone=ctx.timezone)
                 if main:
                     main = {**main, "favorite_side": favorite_side(main, cfg.favorites)}

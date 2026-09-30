@@ -312,8 +312,9 @@ def test_wired_into_config_and_dashboard():
 
 @pytest.mark.asyncio
 async def test_far_off_gate_ignores_games_outside_the_slate(monkeypatch):
-    """Thursday's unranked games are a day away; Saturday's ranked slate is three. With the window at
-    one day the ticker gets nothing yet — the gate reads the slate, not the whole FBS week."""
+    """Thursday's unranked game is a day away; Saturday's ranked slate is three. With the window at
+    one day the ticker gets nothing yet — and when Thursday's game is a favourite, it gets that game
+    alone: an upcoming game shows once it is within the window, never the whole week at once."""
     from scoreboard.nfl import source as nfl_source
 
     def game(gid, date, away, home, rank=None):
@@ -328,8 +329,8 @@ async def test_far_off_gate_ignores_games_outside_the_slate(monkeypatch):
     async with httpx.AsyncClient() as http, respx.mock() as mock:
         mock.get(url__regex=r".*/college-football/scoreboard.*").mock(return_value=httpx.Response(200, json={"events": []}))
         src = NcaafSource()
-        for days, expected in ((1, []), (3, ["2", "3"])):
-            cfg = NcaafConfig(favorites=[], slate="ranked", show_games_within_days=days)
+        for favs, days, expected in (([], 1, []), ([], 3, ["2", "3"]), (["WKU"], 1, ["1"]), (["WKU"], 3, ["1", "2", "3"])):
+            cfg = NcaafConfig(favorites=favs, slate="ranked", show_games_within_days=days)
             ctx = SourceContext(key="ncaaf", store=store, config_getter=lambda c=cfg: c, http=http)
             await _one_pass(src._scores_loop(ctx, src._api(ctx)))
-            assert [g["id"] for g in store.get().data["ncaaf.scores"]] == expected, days
+            assert [g["id"] for g in store.get().data["ncaaf.scores"]] == expected, (favs, days)
