@@ -308,3 +308,28 @@ def test_wired_into_config_and_dashboard():
     assert block["title"] == "College football" and block["favorites"] == ["MICH"]
     assert any(g["main"] for d in block["days"] for g in d["games"])
     assert block["teams"]["MICH"]["record"]["rank"] == 8
+
+
+@pytest.mark.asyncio
+async def test_far_off_gate_ignores_games_outside_the_slate(monkeypatch):
+    """Thursday's unranked games are a day away; Saturday's ranked slate is three. With the window at
+    one day the ticker gets nothing yet — the gate reads the slate, not the whole FBS week."""
+    from scoreboard.nfl import source as nfl_source
+
+    def game(gid, date, away, home, rank=None):
+        return {"id": gid, "sport": "ncaaf", "date": date, "start_time_utc": f"{date}T23:30:00Z", "phase": "pregame", "type": "regular",
+                "away": {"abbrev": away, "rank": None}, "home": {"abbrev": home, "rank": rank}}
+
+    week = [game("1", "2026-10-01", "WKU", "NMSU"), game("2", "2026-10-03", "ALA", "MSST", rank=7), game("3", "2026-10-03", "WVU", "ISU", rank=20)]
+    monkeypatch.setattr(nfl_source, "_today", lambda ctx: "2026-09-30")
+    monkeypatch.setattr(NcaafSource, "_scoreboard", lambda self, payload, tz: list(week))
+    monkeypatch.setattr(nfl_source, "select_main_event", lambda *a, **k: None)
+    store = SnapshotStore()
+    async with httpx.AsyncClient() as http, respx.mock() as mock:
+        mock.get(url__regex=r".*/college-football/scoreboard.*").mock(return_value=httpx.Response(200, json={"events": []}))
+        src = NcaafSource()
+        for days, expected in ((1, []), (3, ["2", "3"])):
+            cfg = NcaafConfig(favorites=[], slate="ranked", show_games_within_days=days)
+            ctx = SourceContext(key="ncaaf", store=store, config_getter=lambda c=cfg: c, http=http)
+            await _one_pass(src._scores_loop(ctx, src._api(ctx)))
+            assert [g["id"] for g in store.get().data["ncaaf.scores"]] == expected, days
