@@ -21,16 +21,11 @@ class SizeProfile:
     font_medium: int
     font_large: int
     font_score: int
-    logo: int          # square logo edge in px (hero layouts)
-    logo_small: int    # logo edge next to scores
-    pad: int           # general padding
+    logo: int
+    logo_small: int
+    pad: int
     show_sog: bool = True
     show_records: bool = True
-    # Small label/chip text: records, SOG, clock strips, standings rows, "NO GAMES
-    # TODAY". Kept separate from font_small because these live inside the pixel-ported
-    # 128-wide geometry (7 px chips, fixed column x-positions), which only takes a
-    # 4 px-pitch, 5 px-tall face. Every profile is on 6 until those boards reflow;
-    # the knob is here so raising it is a profile edit, not a hunt through 26 boards.
     font_label_family: str = "pixel"
     font_label: int = 6
 
@@ -41,6 +36,7 @@ class SizeProfile:
 
 PROFILES: tuple[SizeProfile, ...] = (
     SizeProfile("64x32", 64, 32, font_small=6, font_medium=8, font_large=10, font_score=14, logo=14, logo_small=10, pad=1, show_sog=False, show_records=False),
+    SizeProfile("96x32", 96, 32, font_small=6, font_medium=8, font_large=10, font_score=14, logo=16, logo_small=10, pad=1, show_sog=False, show_records=False),
     SizeProfile("64x64", 64, 64, font_small=6, font_medium=8, font_large=12, font_score=18, logo=22, logo_small=14, pad=2, show_records=False),
     SizeProfile("128x32", 128, 32, font_small=6, font_medium=8, font_large=12, font_score=16, logo=20, logo_small=14, pad=2, show_sog=False),
     SizeProfile("128x64", 128, 64, font_small=8, font_medium=10, font_large=16, font_score=26, logo=36, logo_small=22, pad=2),
