@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...boards.base import BaseBoard, BoardContext
-from ...render import Img, Sheen, render_node
+from ...render import Img, render_node
 from ...render.anim import quintic_out
 from ...render.fx import chip, fit_logo, reflected_gradient
 from ..teams import logo, team
@@ -190,11 +190,10 @@ class TeamSummaryBoard(BaseBoard):
                     out.alpha_composite(strip, (0, y))
         else:
             out.alpha_composite(comp.crop((0, offset, w, offset + h)), (0, -exit_px))
-        # logo: slides in from the right over 0.3s (quintic), then loops a sheen
+    # logo: slides in from the right over 0.3s (quintic)
         lx, ly = int(w * 0.83) - lg.width // 2, (h - lg.height) // 2
         k = quintic_out(min(t / logo_in, 1.0))
-        node = Sheen(Img(lg), period=cfg.sheen_seconds, band=40, strength=0, delay=logo_in)
-        limg = render_node(node, t)
+        limg = render_node(Img(lg), t)
         out.paste(limg, (lx + int(lg.width * (1 - k)), ly - exit_px), limg)
         return out.convert("RGB")
 
