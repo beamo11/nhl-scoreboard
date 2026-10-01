@@ -77,7 +77,7 @@ class ClockBoard(BaseBoard):
         cx = (w - tw) // 2
         top = max(0, (h - (th + dh + yh + (2 if cfg.show_date else 0))) // 2)
         cy = top + (dh + 1 if cfg.show_date else 0)
-        items = [(Sheen(time_node, period=3.0, band=max(14, th), strength=0.5, delay=1.0), cx, cy, tw, th)]
+        items = [(Sheen(time_node, period=3.0, band=max(14, th), strength=0, delay=1.0), cx, cy, tw, th)]
         if date is not None and year is not None:
             dw, yw = date.measure()[0], year.measure()[0]
             items.append((date, cx, top, dw, dh))
