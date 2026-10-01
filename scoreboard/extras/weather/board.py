@@ -239,3 +239,136 @@ class WeatherBoard(BaseBoard):
 
         return render_tree(Absolute(items), w, h, t=ctx.elapsed)
 
+# Additions for scoreboard/extras/weather/board.py
+#
+# PART 1: add these two constants near the other colour constants at the top of the file.
+
+HI_COLOR = (255, 150, 80)
+LO_COLOR = (120, 180, 255)
+
+
+# PART 2: add this config + board at the bottom of the file (module level, no indentation).
+# fit_text() from the earlier patch must already be defined at module level.
+
+class WeatherForecastBoardConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", title="Weather forecast board")
+    duration: float = Field(10.0, ge=3, le=60)
+    days: int = Field(3, ge=1, le=5, description="How many days ahead to show (fewer are used on narrow panels)")
+    show_description: bool = Field(True, description="On tall panels, a short condition label under each icon")
+    precip_threshold: int = Field(20, ge=0, le=100, description="Days at or above this chance of precipitation (%) show the chance as well as hi/lo")
+    precip_hold_seconds: float = Field(3.0, ge=1, le=15, description="Short panels only: how long each of hi/lo and the chance is shown")
+
+
+class WeatherForecastBoard(BaseBoard):
+    key = "weather.forecast"
+    title = "Weather forecast"
+    config_model = WeatherForecastBoardConfig
+    requires = frozenset({"weather.daily"})
+
+    def done(self, ctx: BoardContext, cfg: WeatherForecastBoardConfig) -> bool:
+        return ctx.elapsed >= cfg.duration
+
+    def auto_seconds(self, ctx: BoardContext, cfg: WeatherForecastBoardConfig) -> float:
+        return cfg.duration
+
+    def render(self, ctx: BoardContext, cfg: WeatherForecastBoardConfig) -> Image.Image:
+        w, h = ctx.width, ctx.height
+        f6 = ctx.profile.label_font()
+        daily = ctx.snapshot.get("weather.daily") or []
+        today_iso = ctx.now.date().isoformat()
+        days = [d for d in daily if d.get("date", "") > today_iso] or daily[1:]
+        n = max(1, min(cfg.days, w // 22, len(days)))      # ~22px minimum per column
+        days = days[:n]
+        if not days:
+            msg = "NO FORECAST"
+            mw = text_size(msg, f6)[0]
+            return render_tree(Absolute([(Text(msg, f6, GRAY), (w - mw) // 2, h // 2 - 3, mw, 6)]), w, h, t=ctx.elapsed)
+
+        tall = h >= 48
+        col = w // n
+        icon_size = 22 if tall else 12
+        items = []
+        for i, d in enumerate(days):
+            x = i * col
+            delay = 0.1 * i
+            try:
+                name = date.fromisoformat(d["date"]).strftime("%a").upper()
+            except (KeyError, ValueError):
+                name = "---"
+            nw = text_size(name, f6)[0]
+            name_y = 2 if tall else 1
+            items.append((Slide(Text(name, f6, WHITE), 0.3, "down", delay=delay, easing=quintic_out), x + (col - nw) // 2, name_y, nw, 6))
+
+            ic = icon_image(d.get("icon", "cloudy"), icon_size)
+            icon_y = 10 if tall else 8
+            items.append((Slide(Img(ic), 0.3, "down", delay=delay + 0.05, easing=quintic_out), x + (col - ic.width) // 2, icon_y, ic.width, ic.height))
+
+            hi, lo, pop = d.get("hi", "--"), d.get("lo", "--"), d.get("pop")
+            wet = d.get("icon") in PRECIP_ICONS or (pop is not None and pop >= cfg.precip_threshold)
+
+            if tall:
+                # Room for everything at once: label, hi, lo, chance.
+                if cfg.show_description:
+                    label = fit_text((d.get("short") or d.get("desc") or "").upper(), f6, col - 2)
+                    if label:
+                        lw = text_size(label, f6)[0]
+                        items.append((Slide(Text(label, f6, ICON_COLORS.get(d.get("icon", ""), GRAY)), 0.3, "up", delay=delay + 0.1, easing=quintic_out), x + (col - lw) // 2, 35, lw, 6))
+                for txt, color, y in ((f"{hi}", HI_COLOR, 43), (f"{lo}", LO_COLOR, 50)):
+                    tw = text_size(txt, f6)[0]
+                    items.append((Slide(Text(txt, f6, color), 0.3, "up", delay=delay + 0.15, easing=quintic_out), x + (col - tw) // 2, y, tw, 6))
+                if wet and pop is not None:
+                    chance = f"{pop}%"
+                    cw = text_size(chance, f6)[0]
+                    items.append((Slide(Text(chance, f6, HUMIDITY), 0.3, "up", delay=delay + 0.2, easing=quintic_out), x + (col - cw) // 2, 57, cw, 6))
+            else:
+                # Short panel: one slot, hi/lo alternating with the chance on wet days.
+                hilo = f"{hi}/{lo}"
+                faces, rw = [Text(hilo, f6, GRAY)], text_size(hilo, f6)[0]
+                if wet and pop is not None:
+                    chance = f"{pop}%"
+                    faces.append(Text(chance, f6, HUMIDITY))
+                    rw = max(rw, text_size(chance, f6)[0])
+                readout = Cycle(faces, period=cfg.precip_hold_seconds, swap=PRECIP_SWAP)
+                items.append((Slide(readout, 0.3, "up", delay=delay + 0.1, easing=quintic_out), x + (col - rw) // 2, h - 8, rw, 6))
+
+        return render_tree(Absolute(items), w, h, t=ctx.elapsed)
+
+
+# PART 3: replace WeatherBoard._wide_compact (96x32) with this version.
+# Now that the forecast has its own board, the current-conditions board gets the whole panel.
+
+    def _wide_compact(self, cur: dict, daily: list[dict], w: int, h: int, unit_txt: str, ctx: BoardContext, cfg: WeatherBoardConfig) -> Image.Image:
+        """96x32, current conditions only.
+
+        rows 0-11   label (left) + big temp (right)
+        rows 12-21  icon + description
+        rows 22-28  humidity, wind and feels-like (feels-like dropped if it doesn't fit)
+        """
+        f6, big = ctx.profile.label_font(), load_font("pl", 12)
+        imp = unit_txt == "F"
+        temp = f"{cur.get('temp', '--')}{unit_txt}"
+        tw = text_size(temp, big)[0]
+        items = [
+            (Slide(Text(cur.get("label", "WEATHER")[:9].upper(), f6, WHITE), 0.3, "left", easing=quintic_out, h_align="start"), 1, 1, w - tw - 3, 6),
+            (Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=3.0, band=10, strength=0.6, delay=1.0), w - 1 - tw, 0, tw, 12),
+        ]
+        icon = icon_image(cur.get("icon", "cloudy"), 10)
+        items.append((Img(icon), 1, 12, icon.width, icon.height))
+        desc_x = icon.width + 3
+        desc = fit_text(cur.get("short") or cur.get("desc") or "", f6, w - 1 - desc_x)
+        if desc:
+            dw = text_size(desc, f6)[0]
+            items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), desc_x, 14, dw, 6))
+
+        hum = f"H{cur.get('humidity', '--')}%"
+        wind = f"W{cur.get('wind', '--')}"
+        feels = f"Feels {cur.get('feels', '--')}{unit_txt}"
+        hw, ww, fw = (text_size(t, f6)[0] for t in (hum, wind, feels))
+        y = 23
+        items.append((Text(hum, f6, HUMIDITY), 1, y, hw, 6))
+        if hw + ww + fw + 8 <= w - 2:                       # all three fit on the row
+            items.append((Text(wind, f6, WIND), hw + 5, y, ww, 6))
+            items.append((Text(feels, f6, GRAY), w - 1 - fw, y, fw, 6))
+        else:                                                # drop feels-like, right-align wind
+            items.append((Text(wind, f6, WIND), w - 1 - ww, y, ww, 6))
+        return render_tree(Absolute(items), w, h, t=ctx.elapsed)
