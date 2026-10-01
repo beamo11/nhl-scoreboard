@@ -198,7 +198,7 @@ class WeatherBoard(BaseBoard):
         icon = icon_image(cur.get("icon", "cloudy"), 10)
         items.append((Img(icon), 1, 12, icon.width, icon.height))
         desc_x = icon.width + 3
-        desc = fit_text(cur.get("short") or cur.get("desc") or "", f6, w - 1 - desc_x)
+        desc = fit_text(cur.get("desc") or cur.get("short") or "", f6, w - 1 - desc_x)
         if desc:
             dw = text_size(desc, f6)[0]
             items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), desc_x, 14, dw, 6))
