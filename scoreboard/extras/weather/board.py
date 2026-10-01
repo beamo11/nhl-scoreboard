@@ -27,15 +27,15 @@ PRECIP_ICONS = frozenset({"rain", "showers", "storm", "snow", "sleet"})
 ICON_COLORS = {"clear": (255, 220, 50), "night": (255, 220, 50), "partly": (200, 200, 200), "cloudy": (150, 150, 150),
                "rain": (80, 130, 255), "showers": (80, 130, 255), "storm": (180, 100, 255), "snow": (230, 230, 255),
                "sleet": (200, 210, 255), "fog": (120, 120, 120)}
-GLYPHS = {"clear": "", "night": "", "partly": "", "cloudy": "", "rain": "",
-          "showers": "", "storm": "", "snow": "", "sleet": "", "fog": ""}
+GLYPHS = {"clear": "", "night": "", "partly": "", "cloudy": "", "rain": "",
+          "showers": "", "storm": "", "snow": "", "sleet": "", "fog": ""}
 
 
 class WeatherBoardConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", title="Weather board")
     duration: float = Field(15.0, ge=3, le=60)
     show_forecast: bool = True
-    precip_threshold: int = Field(20, ge=0, le=100, description="Forecast days at or above this chance of precipitation (%) alternate between hi/lo and the chance. Days whose icon shows rain or snow always alternate, whatever this is set to")
+    precip_threshold: int = Field(20, ge=0, le=100, description="Forecast days at or above this chance of precipitation (%) alternate between hi/lo and the chance. Days whose icon shows rain or sn[...]
     precip_hold_seconds: float = Field(3.0, ge=1, le=15, description="How long the forecast shows each of hi/lo and the chance of precipitation")
 
 
@@ -94,7 +94,11 @@ class WeatherBoard(BaseBoard):
         unit_txt = "F" if imp else "C"     # bitmap font has no degree sign
         items = []
         if h < 48:
-            return self._compact(cur, w, h, unit_txt, ctx)
+            # Use wide compact (96x32) if width >= 96, otherwise use standard compact (64x32)
+            if w >= 96:
+                return self._wide_compact(cur, daily, w, h, unit_txt, ctx, cfg)
+            else:
+                return self._compact(cur, w, h, unit_txt, ctx)
         # -- current block --
         temp = f"{cur.get('temp', '--')}{unit_txt}"
         tnode = Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=3.0, band=10, strength=0.6, delay=1.0)
@@ -112,7 +116,7 @@ class WeatherBoard(BaseBoard):
         icon = icon_image(cur.get("icon", "cloudy"), 14)
         items.append((Slide(Img(icon), 0.4, "left", easing=quintic_out, h_align="start"), 1, 9, icon.width, icon.height))
         desc = (cur.get("desc") or "")[:14 if w < 128 else 22]
-        items.append((Slide(Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), 0.3, "up", delay=0.1, easing=quintic_out, h_align="start"), icon.width + 3, 13, w - icon.width - 4 - 40, 6))
+        items.append((Slide(Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), 0.3, "up", delay=0.1, easing=quintic_out, h_align="start"), icon.width + 3, 13, w - icon.width - 4 - 40, 6)[...]
         feels = f"Feels {cur.get('feels', '--')}{unit_txt}"
         fw = text_size(feels, f6)[0]
         items.append((Text(feels, f6, GRAY), w - 1 - fw, 13, fw, 6))
@@ -166,4 +170,56 @@ class WeatherBoard(BaseBoard):
         items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), icon.width + 3, 15, 30, 6))
         hw = f"H{cur.get('humidity', '--')}% W{cur.get('wind', '--')}"
         items.append((Text(hw, f6, GRAY), 1, h - 7, w - 2, 6))
+        return render_tree(Absolute(items), w, h, t=ctx.elapsed)
+
+    def _wide_compact(self, cur: dict, daily: list[dict], w: int, h: int, unit_txt: str, ctx: BoardContext, cfg: WeatherBoardConfig) -> Image.Image:
+        """96x32: current on top (label, temp, icon, desc, humidity/wind), forecast strip below."""
+        f6, big = ctx.profile.label_font(), load_font("pl", 12)
+        small_icon = load_font("weathericons.ttf", 9)
+        imp = unit_txt == "F"
+        temp = f"{cur.get('temp', '--')}{unit_txt}"
+        tw = text_size(temp, big)[0]
+        items = [
+            (Slide(Text(cur.get("label", "WEATHER")[:9].upper(), f6, WHITE), 0.3, "left", easing=quintic_out, h_align="start"), 1, 1, w - tw - 3, 6),
+            (Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=3.0, band=10, strength=0.6, delay=1.0), w - 1 - tw, 0, tw, 12),
+        ]
+        icon = icon_image(cur.get("icon", "cloudy"), 10)
+        items.append((Img(icon), 1, 13, icon.width, icon.height))
+        desc = (cur.get("short") or "")
+        items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), icon.width + 3, 15, 30, 6))
+        hw = f"H{cur.get('humidity', '--')}% W{cur.get('wind', '--')}"
+        items.append((Text(hw, f6, GRAY), 1, h - 8, w - 2, 6))
+        
+        # -- forecast strip --
+        if cfg.show_forecast and daily:
+            # Divider at y=22
+            items.append((Img(Image.new("RGBA", (w, 1), (*DIVIDER, 255))), 0, 22, w, 1))
+            days = [d for d in daily if d["date"] > ctx.now.date().isoformat()][:3] or daily[1:4]
+            col = w // max(len(days), 1)
+            for i, d in enumerate(days):
+                x = i * col
+                # Day of week abbreviation
+                try:
+                    name = date.fromisoformat(d["date"]).strftime("%a").upper()[:2]  # 2-char abbr for space
+                except ValueError:
+                    name = "--"
+                nw = text_size(name, f6)[0]
+                items.append((Slide(Text(name, f6, WHITE), 0.3, "down", delay=0.1 * i, easing=quintic_out), x + (col - nw) // 2, 24, nw, 6))
+                
+                # Small weather icon
+                ic = icon_image(d.get("icon", "cloudy"), 8)
+                items.append((Slide(Img(ic), 0.3, "down", delay=0.1 * i + 0.05, easing=quintic_out), x + (col - ic.width) // 2, 24 + 6, ic.width, ic.height))
+                
+                # Hi/lo or precipitation chance (cycling)
+                hilo = f"{d.get('hi', '--')}/{d.get('lo', '--')}"
+                pop = d.get("pop")
+                wet = d.get("icon") in PRECIP_ICONS or (pop is not None and pop >= cfg.precip_threshold)
+                faces, hw = [Text(hilo, f6, GRAY)], text_size(hilo, f6)[0]
+                if wet and pop is not None:
+                    chance = f"{pop}%"
+                    faces.append(Text(chance, f6, HUMIDITY))
+                    hw = max(hw, text_size(chance, f6)[0])
+                readout = Cycle(faces, period=cfg.precip_hold_seconds, swap=PRECIP_SWAP)
+                items.append((Slide(readout, 0.3, "down", delay=0.1 * i + 0.1, easing=quintic_out), x + (col - hw) // 2, h - 6, hw, 6))
+        
         return render_tree(Absolute(items), w, h, t=ctx.elapsed)
