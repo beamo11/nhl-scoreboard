@@ -49,6 +49,24 @@ def _valid_entry(e: Any) -> bool:
     return isinstance(e, dict) and isinstance(e.get("count"), int) and isinstance(e.get("last_seen"), (int, float))
 
 
+def parse(content: bytes) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
+    """``(airframes, daily)`` from a log file's bytes, keeping only well-formed entries.
+    Raises ``ValueError`` for anything that is not a log at all."""
+    try:
+        doc = json.loads(content)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError(f"not valid JSON: {exc}") from exc
+    airframes = doc.get("airframes") if isinstance(doc, dict) else None
+    daily = doc.get("daily") if isinstance(doc, dict) else None
+    if not isinstance(airframes, dict) or not isinstance(daily, dict):
+        raise ValueError("unexpected shape")
+    try:
+        return ({h: e for h, e in airframes.items() if isinstance(h, str) and _valid_entry(e)},
+                {d: int(n) for d, n in daily.items() if isinstance(d, str)})
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"unexpected shape: {exc}") from exc
+
+
 class SightingLog:
     def __init__(self, path: Path | str, max_airframes: int = MAX_AIRFRAMES, save_interval: float = SAVE_INTERVAL_SECONDS) -> None:
         self._path = Path(path)
@@ -68,13 +86,8 @@ class SightingLog:
         if not self._path.exists():
             return
         try:
-            doc = json.loads(self._path.read_text())
-            airframes, daily = doc.get("airframes"), doc.get("daily")
-            if not isinstance(airframes, dict) or not isinstance(daily, dict):
-                raise ValueError("unexpected shape")
-            self._airframes = {h: e for h, e in airframes.items() if isinstance(h, str) and _valid_entry(e)}
-            self._daily = {d: int(n) for d, n in daily.items() if isinstance(d, str)}
-        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            self._airframes, self._daily = parse(self._path.read_bytes())
+        except (OSError, ValueError) as exc:
             broken = self._path.with_suffix(".json.broken")
             log.error("sightings log %s is unusable (%s); moved to %s, starting empty", self._path, exc, broken)
             try:
@@ -82,6 +95,31 @@ class SightingLog:
             except OSError:
                 pass
             self._airframes, self._daily = {}, {}
+
+    # -- backup -------------------------------------------------------------------
+
+    def export(self) -> bytes | None:
+        """The log as it would be on disk, or None when there is nothing yet. Taken from
+        memory rather than the file, so the visits since the last debounced write are in it."""
+        if not self._loaded:
+            self.load()
+        if not self._airframes and not self._daily:
+            return None
+        return self._encode()
+
+    def replace(self, content: bytes) -> None:
+        """Take a log back from a backup: it becomes the state in memory and on disk in one
+        step, so the poll cannot write the old one over it in between. Raises ``ValueError``."""
+        airframes, daily = parse(content)
+        self._airframes, self._daily = _trimmed(airframes, self._max), _recent_days(daily)
+        self._loaded = True
+        self._dirty = self._unsaved = True
+        self.flush()
+        if self._unsaved:
+            raise ValueError(f"could not write {self._path}")
+
+    def _encode(self) -> bytes:
+        return (json.dumps({"version": 1, "airframes": self._airframes, "daily": self._daily}) + "\n").encode()
 
     def flush(self) -> None:
         """Write now if anything is not on disk (call on shutdown): the last_seen of a flyover
@@ -91,7 +129,7 @@ class SightingLog:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps({"version": 1, "airframes": self._airframes, "daily": self._daily}) + "\n")
+            tmp.write_bytes(self._encode())
             os.replace(tmp, self._path)
             self._dirty = self._unsaved = False
         except OSError as exc:

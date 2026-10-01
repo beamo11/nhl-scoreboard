@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from starlette.types import Scope
 
 from .. import __version__
+from ..backup import KEPT_ON_RESET
 from ..config import ConfigStore
 from ..config.models import deep_merge
 from ..config.schema import app_schema
@@ -31,6 +32,7 @@ from ..director.director import self_timed
 from ..output import PreviewHub
 from ..plugins import Registry
 from ..sim import SimulatorHub
+from .backup import router as backup_router
 from .dashboard import router as dashboard_router
 from .guard import AccessGuard
 from .holidays import router as holidays_router
@@ -218,7 +220,7 @@ def create_app(
     def reset_config() -> dict[str, Any]:
         """Everything back to defaults except how the box is reached (`web`): resetting
         `allowed_hosts` from a browser that got here through one of them would lock it out."""
-        return effective(config.replace({"web": config.get().web.model_dump(mode="json")}))
+        return effective(config.reset(keep=KEPT_ON_RESET))
 
     @app.get("/api/schema")
     def schema() -> dict[str, Any]:
@@ -374,6 +376,7 @@ def create_app(
     # config value, so it cannot ride on /api/config like every other holiday setting.
     app.include_router(holidays_router(config, snapshots))
     app.include_router(dashboard_router(config, snapshots))
+    app.include_router(backup_router(config, registry))
     app.include_router(sim_router(simulator if simulator is not None else SimulatorHub(snapshots, config.get, registry.sims)))
 
     app.mount("/static", RevalidatingStatic(directory=STATIC), name="static")

@@ -90,6 +90,7 @@ Think of a newsroom with a wall of screens.
 | Registry | Boards, sources, detectors and simulations discovered from entry points | `plugins.py` |
 | Simulation | Claims a source's keys and publishes what you tell it to, from the Simulator page | `sim/`, `nhl/sim.py` |
 | Config store | Atomic `config.json` with backups, salvage and migrations; listeners fire on change | `config/store.py` |
+| Backup | One zip of the config and every source's user files (`UserData`); restore validates before it writes | `backup.py`, `web/backup.py` |
 | Source health | Per-source fetch, publish and crash stats for the diagnostics page | `data/health.py` |
 
 ## Rules that everything else depends on

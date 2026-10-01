@@ -45,7 +45,8 @@ scoreboard/
   boards/           Board contract + generic boards (clock, splash, blank, test_pattern, season_countdown)
   output/           matrix (rgbmatrix | RGBMatrixEmulator | null), PreviewHub (WebSocket PNG stream)
   web/              FastAPI API + Preact/HTM UI (no build step): dashboard, boards/playlists, settings, wizard,
-                    diagnostics, holidays (per-holiday list: hide, rename, upload a picture)
+                    diagnostics, holidays (per-holiday list: hide, rename, upload a picture), backup (export/import zip,
+                    restore one of the five config copies)
   sim/              simulator hub + contract: an engine claims a source's snapshot keys and publishes on demand from the
                     web UI (Simulator page, /api/sim); entry-point group scoreboard.sims; nhl/sim.py is the NHL game engine
   nhl/              api-web.nhle.com client, normaliser, source, season phase, event detectors, boards (ported old designs), sim
@@ -61,6 +62,7 @@ scoreboard/
                     32-club registry with NHL parents for colours; logos registered from the feed (logos.register_urls)
   extras/           holidays, flights (adsb.lol + adsbdb + airline logos), weather (Open-Meteo; weather/alerts: NWS + Environment
                     Canada watches/warnings, an interrupt board and a playlist board) — same plugin contract
+  backup.py         one zip of config + every source's user files (UserData: holidays pictures, flight sightings); restore validates first
   follower.py       display-only panel: long-polls a master's /api/snapshot?since= and republishes every key (replaces all sources)
   mqtt.py           bridge to a broker: retained snapshot/<key> + event/<kind> + state out, cmd/board + cmd/power in (aiomqtt)
   demo.py           --demo: replays tests/fixtures/nhl as a live game in place of the NHL source
