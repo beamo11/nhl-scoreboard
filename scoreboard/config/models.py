@@ -44,6 +44,10 @@ class FrozenModel(BaseModel):
 class DisplayConfig(FrozenModel):
     """LED panel wiring. Mirrors rpi-rgb-led-matrix options."""
 
+    matrix_preset: str | None = Field(
+        None,
+        description="Quick setup: '32x16', '64x32', '96x32', '128x64', '96x64', or None for custom dimensions"
+    )
     width: int = Field(128, ge=8, le=1024, description="Total pixels wide (cols x chain)")
     height: int = Field(64, ge=8, le=1024, description="Total pixels high (rows x parallel)")
     chain: int = Field(1, ge=1, le=16, description="Panels daisy-chained")
@@ -203,9 +207,9 @@ class LogosConfig(FrozenModel):
 
 
 class SportsConfig(FrozenModel):
-    priority: list[Literal["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"]] = Field(["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"], description="When two sports have a game, which wins the screen (live games always win)")
-    pregame_hours: float = Field(1.0, ge=0, le=24, description="Hours before the start that the pregame playlist takes over; until then a day with a game plays the game-day playlist. 0 = pregame only once the start time has passed")
-    game_day_rollover_hour: int = Field(10, ge=0, le=12, description="Keep last night's finals in the ticker until this hour of the morning (local time); 0 = they leave at midnight. Today's games always show as soon as the date turns")
+    priority: list[Literal["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"]] = Field(["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"], description="When two sports have a game, which wins the screen ([...]
+    pregame_hours: float = Field(1.0, ge=0, le=24, description="Hours before the start that the pregame playlist takes over; until then a day with a game plays the game-day playlist. 0 = pregame [...]
+    game_day_rollover_hour: int = Field(10, ge=0, le=12, description="Keep last night's finals in the ticker until this hour of the morning (local time); 0 = they leave at midnight. Today's games[...]
 
 
 class WebConfig(FrozenModel):
