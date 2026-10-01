@@ -191,9 +191,9 @@ class TeamSummaryBoard(BaseBoard):
         else:
             out.alpha_composite(comp.crop((0, offset, w, offset + h)), (0, -exit_px))
         # logo: slides in from the right over 0.3s (quintic), then loops a sheen
-        lx, ly = int(w * 0.70) - lg.width // 2, (h - lg.height) // 2
+        lx, ly = int(w * 0.83) - lg.width // 2, (h - lg.height) // 2
         k = quintic_out(min(t / logo_in, 1.0))
-        node = Sheen(Img(lg), period=cfg.sheen_seconds, band=40, strength=0.8, delay=logo_in)
+        node = Sheen(Img(lg), period=cfg.sheen_seconds, band=40, strength=0, delay=logo_in)
         limg = render_node(node, t)
         out.paste(limg, (lx + int(lg.width * (1 - k)), ly - exit_px), limg)
         return out.convert("RGB")
