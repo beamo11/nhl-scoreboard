@@ -101,7 +101,7 @@ class WeatherBoard(BaseBoard):
                 return self._compact(cur, w, h, unit_txt, ctx)
         # -- current block --
         temp = f"{cur.get('temp', '--')}{unit_txt}"
-        tnode = Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=3.0, band=10, strength=0.6, delay=1.0)
+        tnode = Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=5.0, band=10, strength=0.2, delay=1.0)
         tw = text_size(temp, big)[0]
         # Today's hi/lo caps the temperature column, on the label row so nothing else
         # moves. The label gives up the width it takes, so the two cannot collide.
