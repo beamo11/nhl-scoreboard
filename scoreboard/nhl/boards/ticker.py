@@ -162,7 +162,6 @@ class TickerBoard(BaseBoard):
             ("home", row_h, "up", 0.3, 1.4),
         ):
             img = fit_logo(self.logo_image(g[side]["abbrev"], g), logo_w, row_h)
-            node = Sheen(Img(img), period=2.0, band=25, strength=0.6, once=True, delay=1.0 + sheen_delay)
             items.append((Slide(node, 1.0, direction, delay=delay, easing=exponential_in_out), 0, top, logo_w, row_h))
  
             abbrev = g[side]["abbrev"].upper()
