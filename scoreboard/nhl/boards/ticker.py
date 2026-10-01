@@ -157,12 +157,12 @@ class TickerBoard(BaseBoard):
         pregame = g["phase"] == "pregame"
         items = []
  
-        for side, top, direction, delay, sheen_delay in (
-            ("away", 0, "down", 0.0, 0.0),
-            ("home", row_h, "up", 0.3, 1.4),
+        for side, top, direction, delay in (
+            ("away", 0, "down", 0.0),
+            ("home", row_h, "up", 0.3),
         ):
             img = fit_logo(self.logo_image(g[side]["abbrev"], g), logo_w, row_h)
-            items.append((Slide(node, 1.0, direction, delay=delay, easing=exponential_in_out), 0, top, logo_w, row_h))
+            items.append((Slide(Img(img), 1.0, direction, delay=delay, easing=exponential_in_out), 0, top, logo_w, row_h))
  
             abbrev = g[side]["abbrev"].upper()
             aw = text_size(abbrev, f7)[0]
