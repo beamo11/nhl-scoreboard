@@ -198,13 +198,13 @@ class WeatherBoard(BaseBoard):
         icon = icon_image(cur.get("icon", "cloudy"), 10)
         items.append((Img(icon), 1, 12, icon.width, icon.height))
         desc_x = icon.width + 3
-        desc = fit_text(cur.get("short") or cur.get("desc") or "", f6, w - 1 - desc_x)
+        desc = fit_text(cur.get("desc") or "", f6, w - 1 - desc_x)
         if desc:
             dw = text_size(desc, f6)[0]
             items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), desc_x, 14, dw, 6))
 
-        hum = f"H{cur.get('humidity', '--')}%"
-        wind = f"W{cur.get('wind', '--')}"
+        hum = f"Hum{cur.get('humidity', '--')}%"
+        wind = f"Wind{cur.get('wind', '--')}"
         feels = f"Feels {cur.get('feels', '--')}{unit_txt}"
         hw, ww, fw = (text_size(t, f6)[0] for t in (hum, wind, feels))
         y = 23
