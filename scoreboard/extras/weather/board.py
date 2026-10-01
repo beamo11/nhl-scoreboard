@@ -232,3 +232,4 @@ class WeatherBoard(BaseBoard):
                 items.append((Slide(readout, 0.3, "down", delay=0.1 * i + 0.1, easing=quintic_out), x + (col - hw) // 2, h - 6, hw, 6))
         
         return render_tree(Absolute(items), w, h, t=ctx.elapsed)
+
