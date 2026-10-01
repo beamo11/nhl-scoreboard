@@ -35,7 +35,7 @@ class WeatherBoardConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", title="Weather board")
     duration: float = Field(15.0, ge=3, le=60)
     show_forecast: bool = True
-    precip_threshold: int = Field(20, ge=0, le=100, description="Forecast days at or above this chance of precipitation (%) alternate between hi/lo and the chance. Days whose icon shows rain or snow always alternate, whatever this is set to")
+    precip_threshold: int = Field(20, ge=0, le=100, description="Forecast days at or above this chance of precipitation (%) alternate between hi/lo and the chance. Days whose icon shows rain or sn[...]
     precip_hold_seconds: float = Field(3.0, ge=1, le=15, description="How long the forecast shows each of hi/lo and the chance of precipitation")
 
 
@@ -116,7 +116,7 @@ class WeatherBoard(BaseBoard):
         icon = icon_image(cur.get("icon", "cloudy"), 14)
         items.append((Slide(Img(icon), 0.4, "left", easing=quintic_out, h_align="start"), 1, 9, icon.width, icon.height))
         desc = (cur.get("desc") or "")[:14 if w < 128 else 22]
-        items.append((Slide(Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), 0.3, "up", delay=0.1, easing=quintic_out, h_align="start"), icon.width + 3, 13, w - icon.width - 4 - 40, 6))
+        items.append((Slide(Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), 0.3, "up", delay=0.1, easing=quintic_out, h_align="start"), icon.width + 3, 13, w - icon.width - 4 - 40, 6)[...]
         feels = f"Feels {cur.get('feels', '--')}{unit_txt}"
         fw = text_size(feels, f6)[0]
         items.append((Text(feels, f6, GRAY), w - 1 - fw, 13, fw, 6))
@@ -175,20 +175,29 @@ class WeatherBoard(BaseBoard):
     def _wide_compact(self, cur: dict, daily: list[dict], w: int, h: int, unit_txt: str, ctx: BoardContext, cfg: WeatherBoardConfig) -> Image.Image:
         """96x32: current on top (label, temp, icon, desc, humidity/wind), forecast strip below."""
         f6, big = ctx.profile.label_font(), load_font("pl", 12)
-        small_icon = load_font("weathericons.ttf", 9)
         imp = unit_txt == "F"
         temp = f"{cur.get('temp', '--')}{unit_txt}"
         tw = text_size(temp, big)[0]
+        icon = icon_image(cur.get("icon", "cloudy"), 10)
+        
+        # Top section (rows 0-21): current conditions
         items = [
+            # Label and temp on row 0-11
             (Slide(Text(cur.get("label", "WEATHER")[:9].upper(), f6, WHITE), 0.3, "left", easing=quintic_out, h_align="start"), 1, 1, w - tw - 3, 6),
             (Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=3.0, band=10, strength=0.6, delay=1.0), w - 1 - tw, 0, tw, 12),
         ]
-        icon = icon_image(cur.get("icon", "cloudy"), 10)
-        items.append((Img(icon), 1, 13, icon.width, icon.height))
-        desc = (cur.get("short") or "")
-        items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), icon.width + 3, 15, 30, 6))
-        hw = f"H{cur.get('humidity', '--')}% W{cur.get('wind', '--')}"
-        items.append((Text(hw, f6, GRAY), 1, h - 8, w - 2, 6))
+        
+        # Icon and description on rows 12-19
+        items.append((Img(icon), 1, 12, icon.width, icon.height))
+        desc = (cur.get("short") or "")[:8]  # Short description, truncated
+        items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), icon.width + 3, 13, 25, 6))
+        
+        # Humidity and wind on row 20-21, split into two columns
+        hum = f"H{cur.get('humidity', '--')}%"
+        wind = f"W{cur.get('wind', '--')}"
+        mid = w // 2
+        items.append((Text(hum, f6, HUMIDITY), 1, 20, mid - 2, 6))
+        items.append((Text(wind, f6, WIND), mid + 1, 20, w - mid - 2, 6))
         
         # -- forecast strip --
         if cfg.show_forecast and daily:
@@ -198,9 +207,9 @@ class WeatherBoard(BaseBoard):
             col = w // max(len(days), 1)
             for i, d in enumerate(days):
                 x = i * col
-                # Day of week abbreviation
+                # Day of week abbreviation (2 chars)
                 try:
-                    name = date.fromisoformat(d["date"]).strftime("%a").upper()[:2]  # 2-char abbr for space
+                    name = date.fromisoformat(d["date"]).strftime("%a").upper()[:2]
                 except ValueError:
                     name = "--"
                 nw = text_size(name, f6)[0]
