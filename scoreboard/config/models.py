@@ -97,6 +97,19 @@ class BrightnessConfig(FrozenModel):
         return value
 
 
+class EffectsConfig(FrozenModel):
+    """Visual effects and animations."""
+    
+    enable_sheen: bool = Field(True, description="Enable sheen/highlight effects on logos and badges")
+    enable_pulse: bool = Field(True, description="Enable pulsing/breathing effects on elements")
+    enable_blink: bool = Field(True, description="Enable blinking/flash effects")
+    enable_slide: bool = Field(True, description="Enable slide/wipe entrance/exit animations")
+    enable_fade: bool = Field(True, description="Enable fade in/out transitions")
+    enable_marquee: bool = Field(True, description="Enable scrolling text (marquee)")
+    enable_cycle: bool = Field(True, description="Enable cycling/rotating between content")
+    enable_gradients: bool = Field(True, description="Enable gradient overlays and shading")
+
+
 class PlaylistEntry(FrozenModel):
     board: str = Field(description="Board key, e.g. 'clock'")
     duration: float | None = Field(15.0, ge=1, description="Seconds the board shows; for a board that shows a list "
@@ -287,6 +300,7 @@ class AppConfig(FrozenModel):
     display: DisplayConfig = DisplayConfig()
     location: LocationConfig = LocationConfig()
     brightness: BrightnessConfig = BrightnessConfig()
+    effects: EffectsConfig = EffectsConfig()
     playlists: Playlists = Playlists()
     transition: TransitionConfig = TransitionConfig()
     sports: SportsConfig = SportsConfig()
