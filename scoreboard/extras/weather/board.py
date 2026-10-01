@@ -180,75 +180,49 @@ class WeatherBoard(BaseBoard):
 
 
 
-
     def _wide_compact(self, cur: dict, daily: list[dict], w: int, h: int, unit_txt: str, ctx: BoardContext, cfg: WeatherBoardConfig) -> Image.Image:
-        """96x32. Row budget (no overlaps):
+        """96x32, current conditions only.
 
         rows 0-11   label (left) + big temp (right)
-        rows 12-20  icon, description, humidity/wind on ONE line
-        row  21     divider
-        rows 22-31  forecast: per column an 8px icon with the hi/lo (or chance) beside it
+        rows 12-21  icon + description
+        rows 22-28  humidity, wind and feels-like (feels-like dropped if it doesn't fit)
         """
         f6, big = ctx.profile.label_font(), load_font("pl", 12)
         imp = unit_txt == "F"
         temp = f"{cur.get('temp', '--')}{unit_txt}"
         tw = text_size(temp, big)[0]
-        DIV_Y = 21
-
         items = [
             (Slide(Text(cur.get("label", "WEATHER")[:9].upper(), f6, WHITE), 0.3, "left", easing=quintic_out, h_align="start"), 1, 1, w - tw - 3, 6),
             (Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=3.0, band=10, strength=0.6, delay=1.0), w - 1 - tw, 0, tw, 12),
         ]
-
-        # -- row 12-20: icon | description ........ humidity/wind --
-        icon = icon_image(cur.get("icon", "cloudy"), 9)
-        icon_y = max(11, DIV_Y - 1 - icon.height)          # keep the icon above the divider
-        items.append((Img(icon), 1, icon_y, icon.width, icon.height))
-        hw_txt = f"H{cur.get('humidity', '--')}% W{cur.get('wind', '--')}"
-        hw_w = text_size(hw_txt, f6)[0]
-        items.append((Text(hw_txt, f6, GRAY), w - 1 - hw_w, 13, hw_w, 6))
-        desc_x = 1 + icon.width + 2
-        desc = fit_text(cur.get("short") or "", f6, w - 1 - hw_w - 3 - desc_x)
+        icon = icon_image(cur.get("icon", "cloudy"), 10)
+        items.append((Img(icon), 1, 12, icon.width, icon.height))
+        desc_x = icon.width + 3
+        desc = fit_text(cur.get("short") or cur.get("desc") or "", f6, w - 1 - desc_x)
         if desc:
             dw = text_size(desc, f6)[0]
-            items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), desc_x, 13, dw, 6))
+            items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), desc_x, 14, dw, 6))
 
-        # -- forecast strip: rows 22-31 --
-        if cfg.show_forecast and daily:
-            items.append((Img(Image.new("RGBA", (w, 1), (*DIVIDER, 255))), 0, DIV_Y, w, 1))
-            today_iso = ctx.now.date().isoformat()
-            days = [d for d in daily if d.get("date", "") > today_iso][:3] or daily[1:4]
-            col = w // max(len(days), 1)
-            for i, d in enumerate(days):
-                x = i * col
-                ic = icon_image(d.get("icon", "cloudy"), 8)
-                hilo = f"{d.get('hi', '--')}/{d.get('lo', '--')}"
-                pop = d.get("pop")
-                wet = d.get("icon") in PRECIP_ICONS or (pop is not None and pop >= cfg.precip_threshold)
-                faces, rw = [Text(hilo, f6, GRAY)], text_size(hilo, f6)[0]
-                if wet and pop is not None:
-                    chance = f"{pop}%"
-                    faces.append(Text(chance, f6, HUMIDITY))
-                    rw = max(rw, text_size(chance, f6)[0])     # fixed box so neither face shifts
-                # icon + gap + readout, centred in the column (never starting left of the column)
-                total = ic.width + 2 + rw
-                x0 = x + max(0, (col - total) // 2)
-                items.append((Slide(Img(ic), 0.3, "down", delay=0.1 * i, easing=quintic_out), x0, DIV_Y + 2, ic.width, ic.height))
-                readout = Cycle(faces, period=cfg.precip_hold_seconds, swap=PRECIP_SWAP)
-                items.append((Slide(readout, 0.3, "down", delay=0.1 * i + 0.05, easing=quintic_out), x0 + ic.width + 2, DIV_Y + 3, rw, 6))
-
+        hum = f"H{cur.get('humidity', '--')}%"
+        wind = f"W{cur.get('wind', '--')}"
+        feels = f"Feels {cur.get('feels', '--')}{unit_txt}"
+        hw, ww, fw = (text_size(t, f6)[0] for t in (hum, wind, feels))
+        y = 23
+        items.append((Text(hum, f6, HUMIDITY), 1, y, hw, 6))
+        if hw + ww + fw + 8 <= w - 2:                       # all three fit on the row
+            items.append((Text(wind, f6, WIND), hw + 5, y, ww, 6))
+            items.append((Text(feels, f6, GRAY), w - 1 - fw, y, fw, 6))
+        else:                                                # drop feels-like, right-align wind
+            items.append((Text(wind, f6, WIND), w - 1 - ww, y, ww, 6))
         return render_tree(Absolute(items), w, h, t=ctx.elapsed)
 
-# Additions for scoreboard/extras/weather/board.py
-#
-# PART 1: add these two constants near the other colour constants at the top of the file.
+
 
 HI_COLOR = (255, 150, 80)
 LO_COLOR = (120, 180, 255)
 
 
-# PART 2: add this config + board at the bottom of the file (module level, no indentation).
-# fit_text() from the earlier patch must already be defined at module level.
+
 
 class WeatherForecastBoardConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", title="Weather forecast board")
@@ -334,41 +308,4 @@ class WeatherForecastBoard(BaseBoard):
         return render_tree(Absolute(items), w, h, t=ctx.elapsed)
 
 
-# PART 3: replace WeatherBoard._wide_compact (96x32) with this version.
-# Now that the forecast has its own board, the current-conditions board gets the whole panel.
 
-    def _wide_compact(self, cur: dict, daily: list[dict], w: int, h: int, unit_txt: str, ctx: BoardContext, cfg: WeatherBoardConfig) -> Image.Image:
-        """96x32, current conditions only.
-
-        rows 0-11   label (left) + big temp (right)
-        rows 12-21  icon + description
-        rows 22-28  humidity, wind and feels-like (feels-like dropped if it doesn't fit)
-        """
-        f6, big = ctx.profile.label_font(), load_font("pl", 12)
-        imp = unit_txt == "F"
-        temp = f"{cur.get('temp', '--')}{unit_txt}"
-        tw = text_size(temp, big)[0]
-        items = [
-            (Slide(Text(cur.get("label", "WEATHER")[:9].upper(), f6, WHITE), 0.3, "left", easing=quintic_out, h_align="start"), 1, 1, w - tw - 3, 6),
-            (Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=3.0, band=10, strength=0.6, delay=1.0), w - 1 - tw, 0, tw, 12),
-        ]
-        icon = icon_image(cur.get("icon", "cloudy"), 10)
-        items.append((Img(icon), 1, 12, icon.width, icon.height))
-        desc_x = icon.width + 3
-        desc = fit_text(cur.get("short") or cur.get("desc") or "", f6, w - 1 - desc_x)
-        if desc:
-            dw = text_size(desc, f6)[0]
-            items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), desc_x, 14, dw, 6))
-
-        hum = f"H{cur.get('humidity', '--')}%"
-        wind = f"W{cur.get('wind', '--')}"
-        feels = f"Feels {cur.get('feels', '--')}{unit_txt}"
-        hw, ww, fw = (text_size(t, f6)[0] for t in (hum, wind, feels))
-        y = 23
-        items.append((Text(hum, f6, HUMIDITY), 1, y, hw, 6))
-        if hw + ww + fw + 8 <= w - 2:                       # all three fit on the row
-            items.append((Text(wind, f6, WIND), hw + 5, y, ww, 6))
-            items.append((Text(feels, f6, GRAY), w - 1 - fw, y, fw, 6))
-        else:                                                # drop feels-like, right-align wind
-            items.append((Text(wind, f6, WIND), w - 1 - ww, y, ww, 6))
-        return render_tree(Absolute(items), w, h, t=ctx.elapsed)
