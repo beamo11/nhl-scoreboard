@@ -27,8 +27,8 @@ PRECIP_ICONS = frozenset({"rain", "showers", "storm", "snow", "sleet"})
 ICON_COLORS = {"clear": (255, 220, 50), "night": (255, 220, 50), "partly": (200, 200, 200), "cloudy": (150, 150, 150),
                "rain": (80, 130, 255), "showers": (80, 130, 255), "storm": (180, 100, 255), "snow": (230, 230, 255),
                "sleet": (200, 210, 255), "fog": (120, 120, 120)}
-GLYPHS = {"clear": "", "night": "", "partly": "", "cloudy": "", "rain": "",
-          "showers": "", "storm": "", "snow": "", "sleet": "", "fog": ""}
+GLYPHS = {"clear": "", "night": "", "partly": "", "cloudy": "", "rain": "",
+          "showers": "", "storm": "", "snow": "", "sleet": "", "fog": ""}
 
 
 class WeatherBoardConfig(BaseModel):
