@@ -220,9 +220,9 @@ class LogosConfig(FrozenModel):
 
 
 class SportsConfig(FrozenModel):
-    priority: list[Literal["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"]] = Field(["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"], description="When two sports have a game, which wins the screen ([...]
-    pregame_hours: float = Field(1.0, ge=0, le=24, description="Hours before the start that the pregame playlist takes over; until then a day with a game plays the game-day playlist. 0 = pregame [...]
-    game_day_rollover_hour: int = Field(10, ge=0, le=12, description="Keep last night's finals in the ticker until this hour of the morning (local time); 0 = they leave at midnight. Today's games[...]
+    priority: list[Literal["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"]] = Field(["nhl", "nfl", "ncaaf", "mlb", "ncaah", "ahl"], description="When two sports have a game, which wins the screen ([...]")
+    pregame_hours: float = Field(1.0, ge=0, le=24, description="Hours before the start that the pregame playlist takes over; until then a day with a game plays the game-day playlist. 0 = pregame [...]")
+    game_day_rollover_hour: int = Field(10, ge=0, le=12, description="Keep last night's finals in the ticker until this hour of the morning (local time); 0 = they leave at midnight. Today's games[...]")
 
 
 class WebConfig(FrozenModel):
