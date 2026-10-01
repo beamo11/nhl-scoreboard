@@ -51,6 +51,11 @@ def temp_color(t: int | None, imperial: bool) -> tuple[int, int, int]:
         return (255, 255, 255)
     return (255, 150, 80)
 
+def fit_text(text: str, font, max_w: int) -> str:
+    """Trim text until it fits in max_w pixels (bitmap fonts have no ellipsis glyph)."""
+    while text and text_size(text, font)[0] > max_w:
+        text = text[:-1]
+    return text
 
 def today_entry(daily: list[dict], today: date) -> dict | None:
     """Today's row from the daily forecast.
@@ -173,12 +178,6 @@ class WeatherBoard(BaseBoard):
         return render_tree(Absolute(items), w, h, t=ctx.elapsed)
 
 
-
-    def fit_text(text: str, font, max_w: int) -> str:
-        """Trim text until it fits in max_w pixels (bitmap fonts have no ellipsis glyph)."""
-        while text and text_size(text, font)[0] > max_w:
-            text = text[:-1]
-        return text
 
 
 
