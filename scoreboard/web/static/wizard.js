@@ -19,6 +19,7 @@ const PANELS = [
   { id: '128x64', label: '128 x 64 (one panel)', display: { width: 128, height: 64, chain: 1, parallel: 1 } },
   { id: '2x64x64', label: '128 x 64 (two 64x64 panels chained)', display: { width: 128, height: 64, chain: 2, parallel: 1 } },
   { id: '64x32', label: '64 x 32 (one panel)', display: { width: 64, height: 32, chain: 1, parallel: 1 } },
+  { id: '96x32', label: '96 x 32 (three 32x16 panels chained)', display: { width: 96, height: 32, chain: 3, parallel: 1 } },
   { id: '2x64x32', label: '128 x 32 (two 64x32 panels chained)', display: { width: 128, height: 32, chain: 2, parallel: 1 } },
   { id: '64x64', label: '64 x 64 (one panel)', display: { width: 64, height: 64, chain: 1, parallel: 1 } },
 ];
@@ -46,7 +47,7 @@ export function Wizard({ config, save, Preview, onDone }) {
 
   // keep the test pattern on screen while the hardware steps are open
   useEffect(() => {
-    if (step <= 1) { api.post('/api/override', { board: 'test_pattern', seconds: 120 }).catch(() => {}); const id = setInterval(() => api.post('/api/override', { board: 'test_pattern', seconds: 120 }).catch(() => {}), 60000); return () => { clearInterval(id); api.post('/api/override', { board: null }).catch(() => {}); }; }
+    if (step <= 1) { api.post('/api/override', { board: 'test_pattern', seconds: 120 }).catch(() => {}); const id = setInterval(() => api.post('/api/override', { board: 'test_pattern', seconds: 120 }).catch(() => {}), 30000); return () => clearInterval(id); }
   }, [step]);
 
   const saveDisplay = (patch) => { setNeedsRestart(true); return save({ display: patch }); };
@@ -85,7 +86,7 @@ export function Wizard({ config, save, Preview, onDone }) {
     html`<${Step} n=${4} title="Where you are">
       <p class="muted">Used for game times and, if you enable it, sunset dimming.</p>
       <div class="field"><label>Timezone</label><input type="text" value=${config.location.timezone} onchange=${e => save({ location: { timezone: e.target.value } })} />
-        <small>Detected: ${Intl.DateTimeFormat().resolvedOptions().timeZone} <a onclick=${() => save({ location: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } })} style="cursor:pointer;color:var(--accent)">use this</a></small></div>
+        <small>Detected: ${Intl.DateTimeFormat().resolvedOptions().timeZone} <a onclick=${() => save({ location: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } })} style="cursor:pointer">use this</a></small></div>
       <${LocationPicker} location=${config.location} save=${save} />
     <//>`,
     html`<${Step} n=${5} title="Name this scoreboard">
@@ -117,7 +118,7 @@ function Hostname() {
   const [current, setCurrent] = useState('');
   const [msg, setMsg] = useState('');
   useEffect(() => { api.get('/api/system').then(s => { setCurrent(s.hostname); setName(s.hostname); }); }, []);
-  const apply = () => api.post('/api/system/hostname', { hostname: name }).then(r => { setCurrent(r.hostname); setMsg(r.changed ? `Saved — reach it at ${r.hostname}.local:8080 after the next reboot.` : 'Not available on this system; keep using the current address.'); }).catch(e => setMsg(e.message));
+  const apply = () => api.post('/api/system/hostname', { hostname: name }).then(r => { setCurrent(r.hostname); setMsg(r.changed ? `Saved — reach it at ${r.hostname}.local:8080 after the next restart.` : `Already ${r.hostname}`); });
   return html`<div class="field"><label>Name</label><input type="text" value=${name} onchange=${e => setName(e.target.value.toLowerCase())} />
     <small>Current: ${current}.local ${msg}</small></div>
     <button class="secondary" onclick=${apply} disabled=${!name || name === current}>Save name</button>`;
@@ -128,20 +129,21 @@ function LocationPicker({ location, save }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [msg, setMsg] = useState('');
-  const search = () => api.get('/api/geocode?q=' + encodeURIComponent(q)).then(r => { setResults(r); setMsg(r.length ? '' : 'No matches — try a bigger town or add the country.'); }).catch(e => setMsg('Lookup failed: ' + e.message));
-  const pick = (r) => { save({ location: { latitude: r.latitude, longitude: r.longitude, timezone: r.timezone || location.timezone } }); setResults([]); setMsg(`Saved ${r.name}${r.region ? ', ' + r.region : ''} (${r.latitude}, ${r.longitude})`); };
+  const search = () => api.get('/api/geocode?q=' + encodeURIComponent(q)).then(r => { setResults(r); setMsg(r.length ? '' : 'No matches — try a bigger town or add the country.'); }).catch(e => setMsg('Error: ' + e.message));
+  const pick = (r) => { save({ location: { latitude: r.latitude, longitude: r.longitude, timezone: r.timezone || location.timezone } }); setResults([]); setMsg(`Saved ${r.name}${r.region ? ', ' + r.region : ''}`); };
   const secure = window.isSecureContext && navigator.geolocation;
   return html`
     <div class="field"><label>Find your town</label>
       <div class="row"><input type="text" value=${q} placeholder="e.g. Toronto, or a postcode" oninput=${e => setQ(e.target.value)} onkeydown=${e => e.key === 'Enter' && search()} />
         <button class="secondary" onclick=${search} disabled=${q.length < 2}>Search</button></div>
-      ${results.length > 0 && html`<div class="tags" style="margin-top:6px">${results.map(r => html`<span class="tag" style="cursor:pointer" onclick=${() => pick(r)}>${r.name}${r.region ? ', ' + r.region : ''} ${r.country}</span>`)}</div>`}
+      ${results.length > 0 && html`<div class="tags" style="margin-top:6px">${results.map(r => html`<span class="tag" style="cursor:pointer" onclick=${() => pick(r)}>${r.name}${r.region ? ', ' + r.region : ''}</span>`)}</div>`}
       <small>Used for weather, flights and sunset dimming. ${msg}</small></div>
     <div class="field"><label>Or enter coordinates</label>
       <div class="row">
-        <input type="number" step="0.001" placeholder="latitude" value=${location.latitude ?? ''} onchange=${e => save({ location: { latitude: e.target.value === '' ? null : +e.target.value } })} style="max-width:130px" />
-        <input type="number" step="0.001" placeholder="longitude" value=${location.longitude ?? ''} onchange=${e => save({ location: { longitude: e.target.value === '' ? null : +e.target.value } })} style="max-width:130px" />
-        ${secure && html`<button class="secondary" onclick=${() => navigator.geolocation.getCurrentPosition(p => pick({ name: 'your location', latitude: +p.coords.latitude.toFixed(3), longitude: +p.coords.longitude.toFixed(3) }), () => setMsg('Location permission denied.'))}>Use my location</button>`}
+        <input type="number" step="0.001" placeholder="latitude" value=${location.latitude ?? ''} onchange=${e => save({ location: { latitude: e.target.value === '' ? null : +e.target.value } })} />
+        <input type="number" step="0.001" placeholder="longitude" value=${location.longitude ?? ''} onchange=${e => save({ location: { longitude: e.target.value === '' ? null : +e.target.value } })} />
+        ${secure && html`<button class="secondary" onclick=${() => navigator.geolocation.getCurrentPosition(p => pick({ name: 'your location', latitude: +p.coords.latitude.toFixed(3), longitude: +p.coords.longitude.toFixed(3) }))}>📍 my location</button>`}
       </div>
-      <small>${location.latitude != null ? `Saved: ${location.latitude}, ${location.longitude}` : 'Not set yet.'}${secure ? '' : ' (Browser location needs HTTPS, so it is hidden here.)'}</small></div>`;
+      <small>${location.latitude != null ? `Saved: ${location.latitude}, ${location.longitude}` : 'Not set yet.'}${secure ? '' : ' (Browser location needs HTTPS, so it is hidden here.)'}</small></div>
+  `;
 }
