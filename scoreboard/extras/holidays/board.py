@@ -1,4 +1,8 @@
-"""Holiday countdown board: image on the left (when we have one), big day count and name on the right."""
+"""Holiday countdown board: image on the left (when we have one), big day count and name on the right.
+
+Short panels (height <= 32, e.g. 96x32) get a compact text column: the day count and its
+label share one row, and the TODAY name uses a smaller font, so two-line names still fit.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,9 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ...boards.base import BaseBoard, BoardContext, per_item
 from ...imagecache import load as load_image
-from ...render import Absolute, Img, Sheen, Slide, Text, VBox, fit_font, load_font, render_tree
+from ...render import Absolute, HBox, Img, Sheen, Slide, Text, VBox, fit_font, load_font, render_tree
 from ...render.anim import quintic_out
-from ...render.text import wrap_text
+from ...render.text import text_size, wrap_text
 
 NUMBER = (80, 200, 255)
 LABEL = (160, 170, 180)
@@ -18,6 +22,10 @@ NAME = (255, 255, 255)
 TODAY_LABEL = (255, 160, 40)
 TODAY_NAME = (255, 220, 100)
 SEPARATOR = (40, 50, 60, 255)
+
+COMPACT_MAX_H = 32          # panels this short or shorter use the compact column
+COMPACT_TODAY_FONT = 8      # name font size for the TODAY case on compact panels
+COMPACT_LABEL_GAP = 2       # between the day count and its label on the shared row
 
 
 class CountdownConfig(BaseModel):
@@ -64,8 +72,10 @@ class CountdownBoard(BaseBoard):
         if not self._items:
             self.enter(ctx, cfg)
         w, h = ctx.width, ctx.height
+        compact = h <= COMPACT_MAX_H
         if not self._items:
-            return render_tree(Text("NO UPCOMING HOLIDAYS", ctx.profile.label_font(), LABEL), w, h)
+            msg = "NO HOLIDAYS" if compact else "NO UPCOMING HOLIDAYS"      # the long form is ~100px wide
+            return render_tree(Text(msg, ctx.profile.label_font(), LABEL), w, h)
         per = per_item(ctx, cfg.seconds_per_holiday)
         idx = min(int(ctx.elapsed // per), len(self._items) - 1)
         local = ctx.elapsed - idx * per
@@ -83,10 +93,23 @@ class CountdownBoard(BaseBoard):
         label = str(item.get("display") or item["name"]).upper()
         if today:
             rows = [Text("TODAY IS", small, TODAY_LABEL)]
-            rows += [Text(line, fit_font(line, "pl", text_w, 12), TODAY_NAME) for line in wrap_text(label, big, text_w, max_lines=2)]
+            if compact:
+                mid = load_font("pl", COMPACT_TODAY_FONT)
+                rows += [Text(line, fit_font(line, "pl", text_w, COMPACT_TODAY_FONT), TODAY_NAME)
+                         for line in wrap_text(label, mid, text_w, max_lines=2)]
+            else:
+                rows += [Text(line, fit_font(line, "pl", text_w, 12), TODAY_NAME) for line in wrap_text(label, big, text_w, max_lines=2)]
         else:
-            rows = [Sheen(Text(str(item["days"]), big, NUMBER), period=3.0, band=10, strength=0.6, once=True, delay=0.6),
-                    Text("DAY TIL" if item["days"] == 1 else "DAYS TIL", small, LABEL)]
+            number = Sheen(Text(str(item["days"]), big, NUMBER), period=3.0, band=10, strength=0.6, once=True, delay=0.6)
+            word = "DAY TIL" if item["days"] == 1 else "DAYS TIL"
+            if compact:
+                # number and label share one row; fall back to the short label if "TIL" doesn't fit
+                used = text_size(str(item["days"]), big)[0] + COMPACT_LABEL_GAP
+                if used + text_size(word, small)[0] > text_w:
+                    word = word.removesuffix(" TIL")
+                rows = [HBox([number, Text(word, small, LABEL)], spacing=COMPACT_LABEL_GAP)]
+            else:
+                rows = [number, Text(word, small, LABEL)]
             rows += [Text(line, small, NAME) for line in wrap_text(label, small, text_w, max_lines=2)]
         col = VBox(rows, spacing=1)
         items.append((Slide(col, 0.4, "up", delay=0.1, easing=quintic_out), text_x, 0, text_w, h))
