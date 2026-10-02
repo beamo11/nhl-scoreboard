@@ -12,7 +12,7 @@ from ..render import Absolute, Sheen, Text, load_font, profile_for, render_tree
 from ..render.text import text_size
 from .base import BaseBoard, BoardContext
 
-CLOCK_FONTS = ("clock", "score", "block", "ari", "gothic", "upheaval", "camels", "cute")
+CLOCK_FONTS = ("clock", "score", "block", "ari", "gothic", "upheaval", "camels", "cute", "old")
 MIN_CLOCK = 8
 DATE_RATIO = 0.4          # date/year height relative to the time, as the old client had it
 WIDEST_TIME = "88:88"     # size for the widest time so the digits don't resize every minute
