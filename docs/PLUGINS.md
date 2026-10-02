@@ -34,6 +34,14 @@ shown under *Data sources* on the dashboard and diagnostics pages (`GET /api/sou
 last error, published keys. If a source runs several loops, call `ctx.sleep` from the main one and `ctx.nap(seconds)` from the others: the same early wake, nothing reported as the next poll.
 Register: `[project.entry-points."scoreboard.sources"] my = "pkg.module:MySource"`.
 
+**Files the user cannot get back.** If your source keeps something nothing can re-download — an upload, a log it
+has been building — give it `export_data() -> {name: bytes}` and `import_data(name, content)` (raise `ValueError`
+with a message for the user to refuse a file) and those files ride along in the backup zip under
+`data/<key>/<name>`, and come back through `import_data` on a restore (see `scoreboard/backup.py`, `UserData`).
+Both run on a worker thread while the source is running, so `import_data` must hand the file over to your own
+state itself — write it and adopt it in one step, as the flights sighting log does — rather than leave a file on
+disk for the next poll to overwrite. A name is a plain file name: no directories.
+
 ## Board
 ```python
 class MyBoard(BaseBoard):

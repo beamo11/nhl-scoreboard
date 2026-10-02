@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ...config.models import ADVANCED, edited_on
 from ...data.source import SourceContext
+from . import images
 from .images import IMAGES, base_name, image_path, slug, uploaded  # noqa: F401  (re-exported)
 
 if TYPE_CHECKING:
@@ -198,6 +199,18 @@ def _compute(cfg: HolidaysConfig, today: date) -> dict[str, list[dict[str, Any]]
 class HolidaysSource:
     key: ClassVar[str] = KEY
     config_model: ClassVar[type[BaseModel]] = HolidaysConfig
+
+    # -- what a backup carries for this source: the pictures you uploaded (scoreboard/backup.py)
+
+    def export_data(self) -> dict[str, bytes]:
+        return images.uploads()
+
+    def import_data(self, name: str, content: bytes) -> None:
+        """An upload from a backup goes through the same checks as one from the browser."""
+        stem, dot, ext = name.rpartition(".")
+        if not dot or ext != "png":
+            raise images.ImageError("not a picture file")
+        images.save(stem, content)
 
     async def run(self, ctx: SourceContext) -> None:
         while True:

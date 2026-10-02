@@ -106,6 +106,7 @@ Event bursts collapse to the latest event per (kind, team).
 supplied and nothing can re-download — `flights/sightings.json` (the airframe visit log) and `holidays/<slug>.png`, the latter written only through
 `POST /api/holidays/images/{slug}`, which re-encodes whatever you send to a PNG of at most 256px. Both live outside the checkout so
 an OTA update, which fast-forwards the working tree, cannot delete them.
+Both are in the backup zip (Settings → *Backup & restore*, `GET /api/backup/export`) and go back through the same checks on a restore.
 
 Fixtures under `tests/fixtures/` are real captures of each, except MLB and college football, which are generated
 (see their READMEs); tests never hit the network (respx).

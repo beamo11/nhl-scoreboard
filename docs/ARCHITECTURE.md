@@ -225,7 +225,7 @@ source with a fixture replay and needs a restart to leave.
 | Latest preview PNG | `PreviewHub` | replaced per encode |
 | Airframe sighting log | `$SCOREBOARD_DATA_DIR/flights/sightings.json` | user data, never re-downloadable; written at most every 15 min and only for a new visit, airframe or detail (a flyover still in progress only moves `last_seen` in memory, flushed at shutdown) |
 | Uploaded holiday pictures | `$SCOREBOARD_DATA_DIR/holidays/<slug>.png` | user data |
-| Config | `config.json` (+ `.1`…`.5` backups, `.broken`, `.tmp`) | see below |
+| Config | `config.json` (+ `.1`…`.5` backups, `.broken`, `.tmp`) | see below; the five copies are listed and restorable from the Settings page (`/api/backup`) |
 
 `SCOREBOARD_CACHE_DIR` defaults to `~/.scoreboard/cache` (`/var/cache/scoreboard` under systemd) and is
 safe to clear; `SCOREBOARD_DATA_DIR` (`~/.scoreboard/data`, `/var/lib/scoreboard`) holds what the user
@@ -238,6 +238,21 @@ writes atomically (temp file + rename, mode 0600, five rotating backups) and the
 the new model; nothing is written if validation fails. On load a document that is not JSON is moved to
 `config.json.broken` and defaults are used; an old `version` is migrated step by step (`MIGRATIONS`); a
 document with bad keys is *salvaged* — only the offending paths are dropped, and a warning names them.
+`ConfigStore.replace(document, keep=...)` is the import / reset / restore path: the document is migrated and
+validated whole, and the sections named in `keep` (`web`, so a restore cannot take the page away from the browser
+doing it) come from the running config instead. `backups()` lists the `.1`…`.5` copies and `restore_backup(slot)`
+makes one live — through `replace`, so the config being replaced becomes `.1` and the restore can be undone.
+
+## Backup and restore
+`scoreboard/backup.py` builds and restores one zip: `manifest.json`, `config.json` (the stored document) and
+`data/<source key>/<file>` for every loaded source that implements `UserData` (`export_data` / `import_data`;
+bundled: the holidays source's uploaded pictures, the flights source's sightings log). On restore the config is
+validated before anything is written, each data file is handed back to its source — which validates it the way it
+validates an upload, so nothing in an archive lands on disk as it came — and the config is replaced last. A file
+for a source that is not loaded, a bad picture, a path trick in a member name: skipped and reported, never
+fatal. Size caps on the upload, on each member as the zip header claims it and on the total guard against a zip
+bomb. `web/backup.py` exposes it: `GET /api/backup` (what a backup would hold, the copies on disk),
+`GET /api/backup/export`, `POST /api/backup/import` (the body is the zip), `POST /api/backup/versions/{n}/restore`.
 
 Listeners registered at startup: log level, logo variant preferences, preview fps, each source context's
 timezone and location, the source supervisor (starts, stops or wakes a source when its `sources.*` section

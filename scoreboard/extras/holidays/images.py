@@ -135,6 +135,19 @@ def save(value: str, data: bytes) -> Path:
     return path
 
 
+def uploads() -> dict[str, bytes]:
+    """Every uploaded picture, by file name, for a backup. A file that cannot be read is left out."""
+    out = {}
+    for path in sorted(USER_IMAGES.glob("*.png")):
+        if not SLUG.fullmatch(path.stem):
+            continue
+        try:
+            out[path.name] = path.read_bytes()
+        except OSError as exc:
+            log.warning("could not read %s for the backup: %s", path, exc)
+    return out
+
+
 def remove(value: str) -> bool:
     """Delete an uploaded picture, putting any bundled one back. True if one was there."""
     path = stored_path(value)

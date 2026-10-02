@@ -11,7 +11,7 @@ import logging
 import os
 import shutil
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -57,17 +57,61 @@ class ConfigStore:
         self._notify(listeners, new)
         return new
 
-    def replace(self, document: dict[str, Any]) -> AppConfig:
+    def replace(self, document: dict[str, Any], *, keep: Iterable[str] = ()) -> AppConfig:
         """Replace the whole document (import / reset). An export from an older version is
         migrated first, so a v2 file imported over the API does not keep its old semantics
-        until the next restart happens to migrate it."""
+        until the next restart happens to migrate it.
+
+        ``keep`` names top-level sections taken from the *current* config instead of the
+        document: a reset or a restore keeps ``web``, because replacing ``allowed_hosts``
+        from a browser that reached this page through one of them would lock it out."""
         with self._lock:
-            new = AppConfig.model_validate(migrate(document) if isinstance(document, dict) else document)
+            new = AppConfig.model_validate(self._prepare(document, keep))
             self._write(new)
             self._config = new
             listeners = list(self._listeners)
         self._notify(listeners, new)
         return new
+
+    def _prepare(self, document: Any, keep: Iterable[str]) -> Any:
+        if not isinstance(document, dict):
+            return document
+        doc = migrate(document)
+        current = self._config.model_dump(mode="json")
+        for section in keep:
+            if section in current:
+                doc[section] = current[section]
+        return doc
+
+    # -- the rotating copies ----------------------------------------------------
+
+    def backups(self) -> list[dict[str, Any]]:
+        """The copies ``_write`` keeps, newest first: ``slot`` 1 is what the config was
+        before the most recent save. Only what is on disk is listed; the ring may be short."""
+        out = []
+        for slot in range(1, BACKUP_COUNT + 1):
+            path = self._path.with_suffix(f".json.{slot}")
+            try:
+                st = path.stat()
+            except OSError:
+                continue
+            out.append({"slot": slot, "modified": st.st_mtime, "bytes": st.st_size})
+        return out
+
+    def read_backup(self, slot: int) -> dict[str, Any]:
+        """The document in one copy, as stored (not migrated). ``FileNotFoundError`` for an
+        empty slot, ``ValueError`` for a copy that is not a JSON object."""
+        if not 1 <= slot <= BACKUP_COUNT:
+            raise FileNotFoundError(f"no backup slot {slot}")
+        raw = json.loads(self._path.with_suffix(f".json.{slot}").read_text())
+        if not isinstance(raw, dict):
+            raise ValueError("top level is not an object")
+        return raw
+
+    def restore_backup(self, slot: int, *, keep: Iterable[str] = ()) -> AppConfig:
+        """Make one of the copies the live config. The config it replaces goes to slot 1
+        like any other save, so a restore can itself be undone."""
+        return self.replace(self.read_backup(slot), keep=keep)
 
     @staticmethod
     def _notify(listeners: list[Listener], new: AppConfig) -> None:
@@ -79,8 +123,8 @@ class ConfigStore:
             except Exception:
                 log.exception("config listener failed")
 
-    def reset(self) -> AppConfig:
-        return self.replace({})
+    def reset(self, *, keep: Iterable[str] = ()) -> AppConfig:
+        return self.replace({}, keep=keep)
 
     # -- persistence ---------------------------------------------------------
 

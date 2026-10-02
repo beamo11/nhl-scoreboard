@@ -81,7 +81,8 @@ nothing needs a restart.
   finals stay in the ticker until then — today's games show as soon as the date turns, and the postgame board still
   leaves at midnight), Boards (per-board settings), Data sources (per-source settings), Integrations (follow
   another panel, MQTT — see below) and System (web port, preview frame rate, update checks, allowed hosts, log
-  level). Rarely-touched fields are hidden behind the *Advanced* toggle.
+  level). Rarely-touched fields are hidden behind the *Advanced* toggle. At the bottom, *Backup & restore* (see below)
+  and *Reset to defaults*.
 - **Simulator** — run a game by hand to see what the panel does: pick two teams, drop the puck, start and stop
   the clock, score (with or without naming the scorer), call penalties, pull a goalie, end periods. The panel
   follows it exactly as it would a real game — the live board, the goal and penalty alerts, the ticker, the
@@ -178,8 +179,23 @@ The Dashboard tells you when a new version is available and updates with one cli
 ~10 s while it restarts; the page reloads itself once the new version is up). If a new version misbehaves,
 the same card has **Roll back to** the one you came from. Nothing else to do.
 
+## Backup and restore
+Settings → *Backup & restore*. **Download backup** saves one zip with everything you would otherwise redo by hand:
+every setting, the holiday pictures you uploaded, and the flight sightings log. Keep one before an update or a
+new SD card. **Restore from file…** puts it back: the settings are checked first (a file that is not a backup, or
+whose settings no longer validate, changes nothing), then each picture and the log go back to the panel exactly as
+an upload would, and the page says what was restored and what it skipped. A backup from an older version is
+migrated on the way in. The System → web settings (port, allowed hosts) are kept from the running panel, so the page
+you are restoring from stays reachable; if display or follower settings changed, a *Restart now* button appears.
+
+Below the buttons, **Previous settings** lists the copies the scoreboard keeps of the settings before each of the
+last five saves, with a *Restore* for each (settings only — the pictures and the log are not part of these). A
+restore is itself a save, so the settings you just replaced become the newest copy and one more click undoes it.
+*Reset to defaults* works the same way: the settings you reset from are in slot 1.
+
 ## If something looks wrong
 - Colours swapped / mirrored → Setup → Colours & orientation → Apply.
 - Flicker → Setup → Flicker fix (GPIO slowdown) → Apply; make sure the install ran `pi_tuning.sh`.
 - Stale red dot bottom-right → the data feed is unreachable; last known data is shown until it returns.
 - Reset everything → Settings → *Reset to defaults* (the System → web settings are kept, so the page stays reachable).
+- Something you changed broke it → Settings → *Backup & restore* → *Previous settings* → *Restore* on the copy from before.

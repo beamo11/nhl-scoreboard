@@ -22,6 +22,7 @@ input[type=range] { max-width:320px; }
 button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; }
 button.secondary { background:#2a3340; }
 button.danger { background:var(--err); }
+a.button { display:inline-block; background:var(--accent); color:#fff; border-radius:6px; padding:8px 14px; text-decoration:none; }
 .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .error { color:var(--err); }
 .ok { color:#5fd28a; }
@@ -230,3 +231,9 @@ table.flights td { white-space:normal; }
 .tags input.code { width:8.5em; font-size:13px; text-transform:uppercase; }
 ul.drift { margin:4px 0 0 0; padding-left:18px; font-size:13px; }
 ul.drift li { margin:2px 0; }
+
+/* Backup card (Settings) */
+.backup .versions { list-style:none; margin:0; padding:0; }
+.backup .versions li { padding:6px 0; border-top:1px solid #222a33; }
+.backup .versions li span:first-child { min-width:170px; }
+.backup .versions li button { margin-left:auto; }

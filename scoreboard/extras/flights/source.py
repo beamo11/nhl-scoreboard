@@ -143,6 +143,9 @@ def detect_overhead(prev: Snapshot, new: Snapshot):
 
 # -- source ---------------------------------------------------------------------
 
+SIGHTINGS_FILE = "sightings.json"
+
+
 class FlightsSource:
     key: ClassVar[str] = "flights"
     config_model: ClassVar[type[BaseModel]] = FlightsConfig
@@ -150,7 +153,7 @@ class FlightsSource:
     def __init__(self, logos: LogoFetcher | None = None, sightings: SightingLog | None = None) -> None:
         self._cache: dict[str, tuple[float, dict[str, str] | None]] = {}   # callsign -> (expires, enrichment)
         self._logos = logos or LogoFetcher()
-        self._sightings = sightings or SightingLog(DATA_ROOT / "flights" / "sightings.json")
+        self._sightings = sightings or SightingLog(DATA_ROOT / "flights" / SIGHTINGS_FILE)
         self._paid_day: date | None = None
         self._paid_count = 0
 
@@ -159,6 +162,17 @@ class FlightsSource:
             await self._poll_forever(ctx)
         finally:
             self._sightings.flush()                       # the debounced write must not lose the last visits on shutdown
+
+    # -- what a backup carries for this source: the sightings log (scoreboard/backup.py)
+
+    def export_data(self) -> dict[str, bytes]:
+        content = self._sightings.export()
+        return {SIGHTINGS_FILE: content} if content is not None else {}
+
+    def import_data(self, name: str, content: bytes) -> None:
+        if name != SIGHTINGS_FILE:
+            raise ValueError("not a sightings log")
+        self._sightings.replace(content)
 
     async def _poll_forever(self, ctx: SourceContext) -> None:
         while True:

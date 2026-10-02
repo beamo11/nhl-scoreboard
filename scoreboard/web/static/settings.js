@@ -10,6 +10,7 @@ import { html, useState, useEffect, useMemo } from './htm-preact.js';
 import { Select } from './select.js';
 import { Tags } from './tags.js';
 import { RestartButton } from './system.js';
+import { Backup } from './backup.js';
 
 // Every state-changing call carries this header. A page on another site cannot set it
 // without a preflight the scoreboard never answers, which is what stops a drive-by POST
@@ -373,6 +374,7 @@ export function Settings({ config, schema, boards, save }) {
       })}
     </div>`)}</div>
 
+    ${!searching && html`<${Backup} />`}
     <div class="card row">
       <button class="danger" onclick=${() => confirm('Reset all settings to defaults? (The System > web settings are kept, so this page stays reachable.)')
         && api.post('/api/config/reset').then(() => location.reload())}>Reset to defaults</button>
