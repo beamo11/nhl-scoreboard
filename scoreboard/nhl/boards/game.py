@@ -14,7 +14,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...boards.base import BaseBoard, BoardContext
-from ...render import Absolute, Anchor, Box, HBox, Img, Sheen, Slide, Text, load_font, render_tree
+from ...render import Absolute, Anchor, Box, HBox, Img, Slide, Text, load_font, render_tree
 from ...render.anim import cubic_out, elastic_out, exponential_out, quartic_out
 from ...render.fx import Chip, fit_logo, reflected_gradient
 from ..teams import logo, team
@@ -25,7 +25,6 @@ RED = (200, 0, 0)
 GREEN = (0, 255, 0)
 
 HOME_STAGGER = 0.4          # seconds the home logo's slide trails the away logo
-SHEEN_STAGGER = 1.4         # seconds the home logo's sheen trails the away sheen (they no longer overlap)
 NOT_PLAYED_WORDS = {"PPD": "POSTPONED", "CANCELLED": "CANCELLED"}   # a suspended game keeps its score
 
 Rect = tuple[int, int, int, int]    # x, y, w, h
@@ -40,7 +39,6 @@ class Layout:
     logo_y: dict[str, int]
     home_logo_x: int
     gradient: Rect
-    sheen_band: int
     # fonts
     score_font: int
     block_font: int
@@ -80,7 +78,6 @@ LAYOUT_128x64 = Layout(
     logo_y={"pregame": 7, "live": 9, "intermission": 9, "postgame": 9},
     home_logo_x=73,
     gradient=(34, 0, 60, 64),
-    sheen_band=30,
     score_font=15, block_font=8,
     away_chip=(2, 45, 25, 11), home_chip=(101, 45, 25, 11),
     away_record=(3, 57, 40, 5), home_record=(85, 57, 40, 5),
@@ -104,7 +101,6 @@ LAYOUT_96x32 = Layout(
     logo_y={"pregame": 1, "live": 1, "intermission": 1, "postgame": 1},
     home_logo_x=62,
     gradient=(22, 0, 52, 32),
-    sheen_band=16,
     score_font=10, block_font=6,
     away_chip=None, home_chip=None, away_record=None, home_record=None,
     strip=(26, 3, 44, 7),
@@ -173,12 +169,11 @@ class GameBoard(BaseBoard):
         t = team(g[side]["abbrev"])
         return t.primary, t.text_on_primary
 
-    def _logo_node(self, abbrev: str, from_dir: str, delay: float = 0.0, sheen_delay: float = 0.0, g: dict[str, Any] | None = None) -> Slide:
-        """Logo wipes in (1.5s), then a single diagonal sheen; delays stagger the two sides."""
+    def _logo_node(self, abbrev: str, from_dir: str, delay: float = 0.0, g: dict[str, Any] | None = None) -> Slide:
+        """Logo wipes in (1.5s); the delay staggers the two sides."""
         lay = self._lay
         img = fit_logo(self.logo_image(abbrev, g or {}), lay.logo_w, lay.logo_h)
-        node = Sheen(Img(img), period=2.0, band=lay.sheen_band, strength=0.6, once=True, delay=1.5 + sheen_delay, reverse=True)
-        return Slide(node, duration=1.5, direction=from_dir, delay=delay, easing=exponential_out)
+        return Slide(Img(img), duration=1.5, direction=from_dir, delay=delay, easing=exponential_out)
 
     def _score(self, value: int, align: str = "center") -> Slide:
         return Slide(Text(str(value), load_font("score", self._lay.score_font), WHITE), duration=1.0, direction="up", easing=elastic_out, h_align=align)
@@ -215,7 +210,7 @@ class GameBoard(BaseBoard):
         gx, gy, gw, gh = lay.gradient
         items: list = [
             (self._logo_node(g["away"]["abbrev"], "left", g=g), 0, ly, lay.logo_w, lay.logo_h),
-            (self._logo_node(g["home"]["abbrev"], "right", delay=HOME_STAGGER, sheen_delay=SHEEN_STAGGER, g=g), lay.home_logo_x, ly, lay.logo_w, lay.logo_h),
+            (self._logo_node(g["home"]["abbrev"], "right", delay=HOME_STAGGER, g=g), lay.home_logo_x, ly, lay.logo_w, lay.logo_h),
             (Img(reflected_gradient(gw, gh)), gx, gy, gw, gh),
         ]
         if phase == "pregame":
