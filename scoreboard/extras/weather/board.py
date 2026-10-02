@@ -273,7 +273,7 @@ class WeatherForecastBoard(BaseBoard):
             name_y = 2 if tall else 1
             items.append((Slide(Text(name, f6, WHITE), 0.3, "down", delay=delay, easing=quintic_out), x + (col - nw) // 2, name_y, nw, 6))
 
-            ic = icon_image(d.get("icon", "cloudy"), icon_size)
+            ic = icon_image(d.get("icon", "rain"), icon_size)
             icon_y = 10 if tall else 8
             items.append((Slide(Img(ic), 0.3, "down", delay=delay + 0.05, easing=quintic_out), x + (col - ic.width) // 2, icon_y, ic.width, ic.height))
 
