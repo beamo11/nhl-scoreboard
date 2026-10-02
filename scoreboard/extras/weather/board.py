@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...boards.base import BaseBoard, BoardContext
-from ...render import Absolute, Cycle, Img, Slide, Text, load_font, render_tree
+from ...render import Absolute, Cycle, Img, Slide, Sheen, Text, load_font, render_tree
 from ...render.anim import quintic_out
 from ...render.text import text_size
 
@@ -106,7 +106,7 @@ class WeatherBoard(BaseBoard):
                 return self._compact(cur, w, h, unit_txt, ctx)
         # -- current block --
         temp = f"{cur.get('temp', '--')}{unit_txt}"
-        tnode = Text(temp, big, temp_color(cur.get("temp"), imp))
+        tnode = Sheen(Text(temp, big, temp_color(cur.get("temp"), imp)), period=5.0, band=10, strength=0, delay=1.0)
         tw = text_size(temp, big)[0]
         # Today's hi/lo caps the temperature column, on the label row so nothing else
         # moves. The label gives up the width it takes, so the two cannot collide.
