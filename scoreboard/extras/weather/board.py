@@ -203,8 +203,8 @@ class WeatherBoard(BaseBoard):
             dw = text_size(desc, f6)[0]
             items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), desc_x, 14, dw, 6))
 
-        hum = f"Hum{cur.get('humidity', '--')}%"
-        wind = f"Wind{cur.get('wind', '--')}"
+        hum = f"Hum {cur.get('humidity', '--')}%"
+        wind = f"Wind {cur.get('wind', '--')}"
         feels = f"Feels {cur.get('feels', '--')}{unit_txt}"
         hw, ww, fw = (text_size(t, f6)[0] for t in (hum, wind, feels))
         y = 23
