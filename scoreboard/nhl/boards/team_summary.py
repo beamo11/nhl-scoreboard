@@ -1,8 +1,12 @@
 """Team summary — port of the old board: dark gradient column, cascading text rows
 (RECORD / LAST / NEXT sections), big logo sliding in from the right with a looping sheen,
-scroll if needed, hold, exit upward."""
+scroll if needed, hold, exit upward.
+
+Geometry comes from a ``Layout`` picked by matrix size (128x64 original, 96x32 compact).
+"""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from PIL import Image, ImageDraw
@@ -18,11 +22,36 @@ from .common import fmt_date, fmt_time, local_time
 WHITE = (255, 255, 255)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
-FADE_START, FADE_END = 46, 72     # header bars are solid to FADE_START, transparent by FADE_END (logo starts ~64)
 CASCADE_FRAMES = 4
 ROW_SLIDE_FRAMES = 4
 SCROLL_DELAY = 5.0
 EXIT_PX_PER_FRAME = 3
+
+
+@dataclass(frozen=True)
+class Layout:
+    fade_start: int         # header bars are solid to here...
+    fade_end: int           # ...and transparent by here (must stay left of the logo's left edge)
+    grad_w: int             # dark gradient column width
+    grad_x: int             # and its x offset
+    logo_w_frac: float      # logo max width as a fraction of panel width
+    logo_h_frac: float      # logo max height as a fraction of panel height
+    logo_cx_frac: float     # logo centre x as a fraction of panel width
+    compact: bool           # trim rows so a short panel doesn't scroll forever
+
+
+LAYOUT_128x64 = Layout(fade_start=46, fade_end=72, grad_w=60, grad_x=-10,
+                       logo_w_frac=0.55, logo_h_frac=0.86, logo_cx_frac=0.83, compact=False)
+
+# 96x32: smaller logo tucked right (left edge ~x=61), text column ~58px wide, fewer rows.
+LAYOUT_96x32 = Layout(fade_start=38, fade_end=56, grad_w=46, grad_x=-6,
+                      logo_w_frac=0.36, logo_h_frac=0.90, logo_cx_frac=0.82, compact=True)
+
+
+def layout_for(width: int, height: int) -> Layout:
+    if (width, height) == (96, 32):
+        return LAYOUT_96x32
+    return LAYOUT_96x32 if height <= 32 else LAYOUT_128x64
 
 
 def _fade_mask(width: int, height: int, solid_until: int, gone_at: int) -> Image.Image:
@@ -63,13 +92,13 @@ class TeamSummaryBoard(BaseBoard):
         return t.primary, t.text_on_primary
 
     def _record_lines(self, rec: dict[str, Any]) -> list[str]:
-        """Text lines under the RECORD header (sport-specific)."""
+        """Text lines under the RECORD header (sport-specific). The first line is the headline record."""
         return [f"{rec['wins']}-{rec['losses']}-{rec['otl']}  {rec['points']} PTS",
                 f"GP {rec['gp']}  L10 {'-'.join(map(str, rec['l10']))}"]
 
     def __init__(self) -> None:
         self._teams: list[dict[str, Any]] = []
-        self._built: dict[str, tuple[Image.Image, list[tuple[int, bool]], Image.Image]] = {}
+        self._built: dict[str, tuple[Image.Image, list[tuple[int, bool, int]], Image.Image]] = {}
         self._timeline: list[float] = []
         self._size = (0, 0)
 
@@ -82,6 +111,7 @@ class TeamSummaryBoard(BaseBoard):
     # -- content --------------------------------------------------------------------
 
     def _rows(self, s: dict[str, Any], ctx: BoardContext, cfg: TeamSummaryConfig) -> list[tuple[Image.Image, bool]]:
+        lay = layout_for(ctx.width, ctx.height)
         f6 = ctx.profile.label_font()
         primary, fg = self.team_colors(s["abbrev"])
         w = ctx.width
@@ -90,7 +120,7 @@ class TeamSummaryBoard(BaseBoard):
         def header(text: str) -> tuple[Image.Image, bool]:
             """Section bar in team colour, fading out before the logo so it never cuts through it."""
             bar = chip(text, f6, fg, primary, pad=(1, 1, w, 1)).crop((0, 0, w, 7))
-            bar.putalpha(_fade_mask(w, 7, solid_until=FADE_START, gone_at=FADE_END))
+            bar.putalpha(_fade_mask(w, 7, solid_until=lay.fade_start, gone_at=lay.fade_end))
             return bar, False
 
         def line(parts: list[tuple[str, tuple[int, int, int]]]) -> tuple[Image.Image, bool]:
@@ -104,13 +134,22 @@ class TeamSummaryBoard(BaseBoard):
 
         streak = rec.get("streak", "")
         streak_color = GREEN if streak.startswith("W") else RED if streak.startswith("L") else WHITE
+        record_lines = self._record_lines(rec)
+        if lay.compact:
+            record_lines = record_lines[:1]             # headline record only; GP / L10 line dropped
         rows = [header("RECORD")]
-        rows += [line([(txt, WHITE)]) for txt in self._record_lines(rec)]
+        rows += [line([(txt, WHITE)]) for txt in record_lines]
         rows += [line([("STREAK", WHITE), (streak, streak_color)]), header("LAST")]
         prev, nxt = s.get("prev_game"), s.get("next_game")
         if prev:
-            rows.append(line([(f"{fmt_date(prev['date'])} {'VS' if prev['home'] else 'AT'} {prev['opponent']}", WHITE)]))
-            rows.append(line([(prev["result"], GREEN if prev["result"] == "W" else RED), (f"{prev['score']}-{prev['opponent_score']}", WHITE)]))
+            result_color = GREEN if prev["result"] == "W" else RED
+            score = f"{prev['score']}-{prev['opponent_score']}"
+            if lay.compact:                             # one row: result, score, VS/AT opponent (no date)
+                rows.append(line([(prev["result"], result_color), (score, WHITE),
+                                  (f"{'VS' if prev['home'] else 'AT'} {prev['opponent']}", WHITE)]))
+            else:
+                rows.append(line([(f"{fmt_date(prev['date'])} {'VS' if prev['home'] else 'AT'} {prev['opponent']}", WHITE)]))
+                rows.append(line([(prev["result"], result_color), (score, WHITE)]))
         else:
             rows.append(line([("---------", WHITE)]))
         rows.append(header("NEXT"))
@@ -123,6 +162,7 @@ class TeamSummaryBoard(BaseBoard):
         return rows
 
     def _build(self, s: dict[str, Any], ctx: BoardContext, cfg: TeamSummaryConfig):
+        lay = layout_for(ctx.width, ctx.height)
         rows = self._rows(s, ctx, cfg)
         total = sum(r.height for r, _ in rows) + max(len(rows) - 1, 0)
         comp = Image.new("RGBA", (ctx.width, max(total, ctx.height)), (0, 0, 0, 0))
@@ -131,7 +171,7 @@ class TeamSummaryBoard(BaseBoard):
             comp.alpha_composite(img, (0, y))
             meta.append((y, animated, img.height))
             y += img.height + 1
-        lg = fit_logo(self.logo_image(s["abbrev"]), int(ctx.width * 0.55), int(ctx.height * 0.86))
+        lg = fit_logo(self.logo_image(s["abbrev"]), int(ctx.width * lay.logo_w_frac), int(ctx.height * lay.logo_h_frac))
         return comp, meta, lg
 
     def _seconds(self, s, ctx, cfg) -> float:
@@ -152,6 +192,7 @@ class TeamSummaryBoard(BaseBoard):
         if not self._teams or self._size != (ctx.width, ctx.height):
             self.enter(ctx, cfg)
         w, h = ctx.width, ctx.height
+        lay = layout_for(w, h)
         out = Image.new("RGBA", (w, h), (0, 0, 0, 255))
         if not self._teams:
             return out.convert("RGB")
@@ -171,8 +212,9 @@ class TeamSummaryBoard(BaseBoard):
         exit_start = scroll_end + cfg.hold_seconds
         exit_px = int((t - exit_start) * fps) * EXIT_PX_PER_FRAME if t >= exit_start else 0
         # gradient column (left), text, logo (top)
-        grad = reflected_gradient(60, h)
-        out.alpha_composite(grad, (-10, -exit_px)) if exit_px <= h else None
+        grad = reflected_gradient(lay.grad_w, h)
+        if exit_px <= h:
+            out.alpha_composite(grad, (lay.grad_x, -exit_px))
         offset = int(min(max(t - scroll_start, 0) * cfg.scroll_speed, travel))
         if t < cascade_end:
             frame_no = int((t - logo_in) * fps)
@@ -190,8 +232,8 @@ class TeamSummaryBoard(BaseBoard):
                     out.alpha_composite(strip, (0, y))
         else:
             out.alpha_composite(comp.crop((0, offset, w, offset + h)), (0, -exit_px))
-    # logo: slides in from the right over 0.3s (quintic)
-        lx, ly = int(w * 0.83) - lg.width // 2, (h - lg.height) // 2
+        # logo: slides in from the right over 0.3s (quintic)
+        lx, ly = int(w * lay.logo_cx_frac) - lg.width // 2, (h - lg.height) // 2
         k = quintic_out(min(t / logo_in, 1.0))
         limg = render_node(Img(lg), t)
         out.paste(limg, (lx + int(lg.width * (1 - k)), ly - exit_px), limg)
