@@ -38,6 +38,28 @@ class WeatherBoardConfig(BaseModel):
     precip_threshold: int = Field(20, ge=0, le=100, description="Forecast days at or above this chance of precipitation (%) alternate between hi/lo and the chance. Days whose icon shows rain or sn[...]")
     precip_hold_seconds: float = Field(3.0, ge=1, le=15, description="How long the forecast shows each of hi/lo and the chance of precipitation")
 
+STATS_VARIANTS = (
+    ("Hum {h}%", "Wind {w}", "Feels {f}{u}"),
+    ("Hum {h}%", "Wind {w}", "Fl {f}{u}"),
+    ("H{h}%", "W{w}", "Fl{f}{u}"),
+    ("H{h}%", "W{w}", "F{f}{u}"),
+)
+MIN_GAP = 3  # px minimum between neighbouring items
+ 
+ 
+def fit_stats(cur: dict, unit_txt: str, w: int, measure):
+    """Return [(text, x, width), ...] for humidity, wind, feels-like, or None if nothing fits."""
+    vals = {"h": cur.get("humidity", "--"), "w": cur.get("wind", "--"),
+            "f": cur.get("feels", "--"), "u": unit_txt}
+    for variant in STATS_VARIANTS:
+        texts = [t.format(**vals) for t in variant]
+        widths = [measure(t) for t in texts]
+        free = (w - 2) - sum(widths)
+        if free >= 2 * MIN_GAP:
+            gap = free // 2                                  # spread the slack evenly
+            xs = [1, 1 + widths[0] + gap, w - 1 - widths[2]]  # hum left, feels right, wind between
+            return list(zip(texts, xs, widths))
+    return None
 
 def temp_color(t: int | None, imperial: bool) -> tuple[int, int, int]:
     if t is None:
@@ -180,12 +202,12 @@ class WeatherBoard(BaseBoard):
 
 
 
-    def _wide_compact(self, cur: dict, daily: list[dict], w: int, h: int, unit_txt: str, ctx: BoardContext, cfg: WeatherBoardConfig) -> Image.Image:
+    def _wide_compact(self, cur: dict, daily: list[dict], w: int, h: int, unit_txt: str, ctx, cfg):
         """96x32, current conditions only.
-
+ 
         rows 0-11   label (left) + big temp (right)
         rows 12-21  icon + description
-        rows 22-28  humidity, wind and feels-like (feels-like dropped if it doesn't fit)
+        rows 22-28  humidity, wind and feels-like (labels shorten to keep all three)
         """
         f6, big = ctx.profile.label_font(), load_font("pl", 12)
         imp = unit_txt == "F"
@@ -202,19 +224,20 @@ class WeatherBoard(BaseBoard):
         if desc:
             dw = text_size(desc, f6)[0]
             items.append((Text(desc, f6, ICON_COLORS.get(cur.get("icon", ""), GRAY)), desc_x, 14, dw, 6))
-
-        hum = f"Hum {cur.get('humidity', '--')}%"
-        wind = f"Wind {cur.get('wind', '--')}"
-        feels = f"Feels {cur.get('feels', '--')}{unit_txt}"
-        hw, ww, fw = (text_size(t, f6)[0] for t in (hum, wind, feels))
+ 
         y = 23
-        items.append((Text(hum, f6, HUMIDITY), 1, y, hw, 6))
-        if hw + ww + fw + 8 <= w - 2:                       # all three fit on the row
-            items.append((Text(wind, f6, WIND), hw + 5, y, ww, 6))
-            items.append((Text(feels, f6, GRAY), w - 1 - fw, y, fw, 6))
-        else:                                                # drop feels-like, right-align wind
+        row = fit_stats(cur, unit_txt, w, lambda t: text_size(t, f6)[0])
+        if row:
+            for (txt, x, tw_), color in zip(row, (HUMIDITY, WIND, GRAY)):
+                items.append((Text(txt, f6, color), x, y, tw_, 6))
+        else:  # last resort, as before: humidity left, wind right, feels-like dropped
+            hum = f"H{cur.get('humidity', '--')}%"
+            wind = f"W{cur.get('wind', '--')}"
+            hw, ww = text_size(hum, f6)[0], text_size(wind, f6)[0]
+            items.append((Text(hum, f6, HUMIDITY), 1, y, hw, 6))
             items.append((Text(wind, f6, WIND), w - 1 - ww, y, ww, 6))
         return render_tree(Absolute(items), w, h, t=ctx.elapsed)
+
 
 
 
