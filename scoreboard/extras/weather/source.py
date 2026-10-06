@@ -1,31 +1,32 @@
-
 """Weather from Environment and Climate Change Canada (MSC GeoMet city page weather).
- 
+
 Free and keyless. Publishes ``weather.current`` and ``weather.daily`` in the same shape the
 boards already consume. EC publishes official forecaster-written 12-hour periods (Today,
 Tonight, Friday, Friday night ...) with an icon code per period, so each day's icon comes from
 the forecaster's own daytime summary rather than from the worst hour of the day.
 """
 from __future__ import annotations
- 
+
 import logging
 import math
+import re
 from datetime import date, datetime, timedelta
 from typing import Any, ClassVar, Literal
 from zoneinfo import ZoneInfo
- 
+
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
- 
+
 from ...config.models import ADVANCED
 from ...data.source import SourceContext
- 
+
 log = logging.getLogger(__name__)
- 
+
 CITYPAGE = "https://api.weather.gc.ca/collections/citypageweather-realtime/items"
 SEARCH_RADII = (0.15, 0.5, 1.5)   # degrees; widen until a city page is found near the location
+POP_RE = re.compile(r"(\d+)\s*(?:percent|%)", re.I)   # "Cloudy with 30 percent chance of showers."
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
- 
+
 # EC icon code -> (short label, icon key). Codes 00-29 are day, 30-39 are the night variants.
 # Built from EC's published icon tables; check against
 # https://collaboration.cmc.ec.gc.ca/cmc/cmos/public_doc/msc-data/citypage-weather/forecast_conditions_icon_code_descriptions_e.csv
@@ -45,8 +46,8 @@ ICONS: dict[int, tuple[str, str]] = {
     44: ("FOG", "fog"), 45: ("FOG", "fog"), 46: ("STM", "storm"), 47: ("STM", "storm"),
     48: ("STM", "storm"),
 }
- 
- 
+
+
 class WeatherConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", title="Weather")
     enabled: bool = True
@@ -54,10 +55,10 @@ class WeatherConfig(BaseModel):
     label: str = Field("", max_length=16, description="Name shown on the board (e.g. your town); blank = 'WEATHER'")
     refresh_seconds: int = Field(900, ge=300, le=3600, json_schema_extra=ADVANCED)
     forecast_days: int = Field(3, ge=1, le=5)
- 
- 
+
+
 # ---------------------------------------------------------------- helpers
- 
+
 def _v(x: Any, lang: str = "en") -> Any:
     """Unwrap EC's bilingual {'en': .., 'fr': ..} and {'value': ..} wrappers to a plain value."""
     while isinstance(x, dict):
@@ -68,37 +69,37 @@ def _v(x: Any, lang: str = "en") -> Any:
         else:
             return None
     return x
- 
- 
+
+
 def _num(x: Any) -> float | None:
     try:
         return None if x is None or x == "" else float(x)
     except (TypeError, ValueError):
         return None                       # e.g. wind "calm"
- 
- 
+
+
 def _temp(v: float | None, imperial: bool) -> int | None:
     return None if v is None else round(v * 9 / 5 + 32 if imperial else v)
- 
- 
+
+
 def _speed(v: float | None, imperial: bool) -> int | None:
     return None if v is None else round(v * 0.6214 if imperial else v)
- 
- 
+
+
 def _icon_info(code: Any) -> tuple[str, str]:
     try:
         return ICONS.get(int(code), ("---", "cloudy"))
     except (TypeError, ValueError):
         return ("---", "cloudy")
- 
- 
+
+
 def _is_night(code: Any) -> bool:
     try:
         return 30 <= int(code) <= 39
     except (TypeError, ValueError):
         return False
- 
- 
+
+
 def nearest_feature(features: list[dict], lat: float, lon: float) -> dict | None:
     def dist(f: dict) -> float:
         c = (f.get("geometry") or {}).get("coordinates") or []
@@ -106,8 +107,8 @@ def nearest_feature(features: list[dict], lat: float, lon: float) -> dict | None
             return math.inf
         return math.hypot(c[1] - lat, (c[0] - lon) * math.cos(math.radians(lat)))
     return min(features, key=dist, default=None)
- 
- 
+
+
 def _period_date(name: str, today: date, prev: date | None, is_day: bool) -> date:
     """Map a period name ('Today', 'Tonight', 'Friday', 'Friday night') to a calendar date."""
     for i, wd in enumerate(WEEKDAYS):
@@ -116,10 +117,10 @@ def _period_date(name: str, today: date, prev: date | None, is_day: bool) -> dat
     if prev is None or name in ("today", "tonight"):
         return today
     return prev + timedelta(days=1) if is_day else prev
- 
- 
+
+
 # ---------------------------------------------------------------- normalisation
- 
+
 def build_daily(props: dict[str, Any], today: date, imp: bool) -> list[dict[str, Any]]:
     forecasts = (props.get("forecastGroup") or {}).get("forecasts") or []
     days: dict[str, dict[str, Any]] = {}
@@ -135,11 +136,13 @@ def build_daily(props: dict[str, Any], today: date, imp: bool) -> list[dict[str,
         d = _period_date(name, today, prev, not is_night)
         prev = d
         ab = f.get("abbreviatedForecast") or {}
-        code = _v(ab.get("iconCode"))
+        code = _v(ab.get("icon") if "icon" in ab else ab.get("iconCode"))
         short, icon = _icon_info(code)
-        pop = _num(_v(ab.get("pop")))
+        # The feed has no numeric pop; EC states the chance in the period text when it is 30%+.
+        m = POP_RE.search(str(_v(f.get("cloudPrecip")) or _v(f.get("textSummary")) or ""))
+        pop = float(m.group(1)) if m else _num(_v(ab.get("pop")))
         temp = _temp(_num(_v(t.get("value") if "value" in t else t)), imp)
- 
+
         row = days.setdefault(d.isoformat(), {
             "date": d.isoformat(), "hi": "--", "lo": "--", "pop": None,
             "sunrise": "", "sunset": "", "code": None, "short": "---", "desc": "", "icon": "cloudy",
@@ -159,23 +162,28 @@ def build_daily(props: dict[str, Any], today: date, imp: bool) -> list[dict[str,
     for r in out:
         r.pop("_has_day", None)
     return out
- 
- 
+
+
 def normalize(payload: dict[str, Any], cfg: WeatherConfig, today: date) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     imp = cfg.units == "imperial"
     props = payload.get("properties") or {}
     daily = build_daily(props, today, imp)
     cc = props.get("currentConditions") or {}
- 
+
     code = _v(cc.get("iconCode"))
     today_row = next((r for r in daily if r["date"] == today.isoformat()), daily[0] if daily else None)
     if code is None and today_row:                 # some stations report no condition
         code = today_row["code"]
     short, icon = _icon_info(code)
     desc = str(_v(cc.get("condition")) or (today_row or {}).get("desc") or "Unknown")
- 
+
     temp = _num(_v(cc.get("temperature")))
-    feels = next((v for v in (_num(_v(cc.get("windChill"))), _num(_v(cc.get("humidex")))) if v is not None), temp)
+    feels = temp
+    chill, hum_x = _num(_v(cc.get("windChill"))), _num(_v(cc.get("humidex")))
+    if temp is not None and chill is not None and temp <= 0 and chill < temp:   # EC defines wind chill only at/below 0 C
+        feels = chill
+    elif temp is not None and hum_x is not None and hum_x > temp:
+        feels = hum_x
     wind = cc.get("wind") or {}
     current = {
         "label": cfg.label or "WEATHER",
@@ -191,14 +199,14 @@ def normalize(payload: dict[str, Any], cfg: WeatherConfig, today: date) -> tuple
         "code": code, "short": short, "desc": desc, "icon": icon,
     }
     return current, daily[: cfg.forecast_days + 1]
- 
- 
+
+
 # ---------------------------------------------------------------- source
- 
+
 class WeatherSource:
     key: ClassVar[str] = "weather"
     config_model: ClassVar[type[BaseModel]] = WeatherConfig
- 
+
     async def _fetch(self, ctx: SourceContext, lat: float, lon: float) -> dict | None:
         for r in SEARCH_RADII:
             params = {"f": "json", "lang": "en", "limit": 20,
@@ -209,7 +217,7 @@ class WeatherSource:
             if feat:
                 return feat
         return None
- 
+
     async def run(self, ctx: SourceContext) -> None:
         while True:
             cfg: WeatherConfig = ctx.config  # type: ignore[assignment]
