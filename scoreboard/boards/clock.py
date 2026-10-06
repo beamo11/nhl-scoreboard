@@ -25,11 +25,11 @@ STACK_GAP = 1             # px between the two stacked letters
 class ClockConfig(BaseModel):
     model_config = {"frozen": True, "extra": "forbid"}
     format: Literal["12h", "24h"] = Field("12h", description="Hour format")
-    font: Literal[CLOCK_FONTS] = Field("block", description="Typeface for the time")
+    font: Literal[CLOCK_FONTS] = Field("ari", description="Typeface for the time")
     show_date: bool = True
     show_meridiem: bool = Field(True, description="Show stacked A/M or P/M after the time (12h format only)")
-    color: tuple[int, int, int] = Field((0, 150, 150), description="Time colour (RGB)")
-    date_color: tuple[int, int, int] = Field((255, 0, 255), description="Date/year/AM-PM colour (RGB)")
+    color: tuple[int, int, int] = Field((10, 134, 61), description="Time colour (RGB)")
+    date_color: tuple[int, int, int] = Field((0, 0, 0), description="Date/year/AM-PM colour (RGB)")
 
 
 def _date_font(clock_size: int, small: ImageFont.ImageFont) -> ImageFont.ImageFont:
