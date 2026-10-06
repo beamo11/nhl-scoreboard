@@ -20,7 +20,7 @@ class MatrixPreset(NamedTuple):
 PRESETS = [
     MatrixPreset("32x16", 32, 16, "Small matrix (single 32x16 panel)"),
     MatrixPreset("64x32", 64, 32, "Standard matrix (two 32x16 panels chained)"),
-    MatrixPreset("96x32", 96, 32, "Wide matrix (three 32x16 panels chained)", chain=3),
+    MatrixPreset("96x32", 96, 32, "Wide matrix (three 32x32 panels chained)", chain=3),
     MatrixPreset("128x64", 128, 64, "Large matrix (2x2 grid of 64x32 panels)", chain=2, parallel=2),
     MatrixPreset("96x64", 96, 64, "Wide large matrix (3 x 64x32 panels)", chain=3, parallel=2),
 ]
