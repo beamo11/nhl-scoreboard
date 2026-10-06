@@ -1,6 +1,5 @@
 """Clock board — port of the old one: cyan time, magenta date above-left and year below-right,
-looping diagonal sheen on the time. In 12h mode a stacked A/M or P/M tag follows the time, as in V1.
-Date and year share the top line (date left, year right) so the time gets the rest of the height."""
+looping diagonal sheen on the time. In 12h mode a stacked A/M or P/M tag follows the time, as in V1."""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -21,7 +20,6 @@ WIDEST_DATE, WIDEST_YEAR = "AUG 88", "8888"
 MERIDIEM_LETTERS = "APM"  # every letter the stacked tag can show: A/M or P/M
 MERIDIEM_GAP = 2          # px between the time and the stacked tag
 STACK_GAP = 1             # px between the two stacked letters
-DATE_YEAR_GAP = 2         # min px between the date and the year on the top line
 
 
 class ClockConfig(BaseModel):
@@ -51,7 +49,7 @@ def _stack_size(font: ImageFont.ImageFont) -> tuple[int, int]:
 
 @lru_cache(maxsize=32)
 def _fonts(width: int, height: int, pad: int, show_date: bool, family: str, meridiem: bool) -> tuple[ImageFont.ImageFont, ImageFont.ImageFont]:
-    """Largest face of ``family`` whose whole block (date + year line / time + stacked tag) still fits the panel."""
+    """Largest face of ``family`` whose whole block (date / time + stacked tag / year) still fits the panel."""
     small = profile_for(width, height).label_font()
     for size in range(height, MIN_CLOCK - 1, -1):
         clock = load_font(family, size)
@@ -65,7 +63,7 @@ def _fonts(width: int, height: int, pad: int, show_date: bool, family: str, meri
         if show_date:
             dw, dh = text_size(WIDEST_DATE, date)
             yw, yh = text_size(WIDEST_YEAR, date)
-            block_w, block_h = max(tw, dw + DATE_YEAR_GAP + yw), th + max(dh, yh) + 1
+            block_w, block_h = max(tw, dw, yw), th + dh + yh + 2
         if block_w <= width - 2 * pad and block_h <= height - 2 * pad:
             return clock, date
     return load_font(family, MIN_CLOCK), _date_font(MIN_CLOCK, small)
@@ -96,31 +94,28 @@ class ClockBoard(BaseBoard):
             letters = [Text(c, date_font, tuple(cfg.date_color)) for c in ctx.now.strftime("%p").upper()[:2]]
         row_h = max(th, stack_h)
 
-        # Top line: date at the left, year at the right
         date = year = None
-        dw = yw = hh = 0
+        dh = yh = 0
         if cfg.show_date:
             date = Text(ctx.now.strftime("%b %d").upper(), date_font, tuple(cfg.date_color))
             year = Text(ctx.now.strftime("%Y"), date_font, tuple(cfg.date_color))
-            (dw, dh), (yw, yh) = date.measure(), year.measure()
-            hh = max(dh, yh)
+            dh, yh = date.measure()[1], year.measure()[1]
 
-        time_w = tw + extra
-        block_w = max(time_w, dw + DATE_YEAR_GAP + yw) if cfg.show_date else time_w
+        block_w = tw + extra
         cx = (w - block_w) // 2
-        tx = cx + (block_w - time_w) // 2                     # the time (and tag) centred under the top line
-        top = max(0, (h - (row_h + hh + (1 if cfg.show_date else 0))) // 2)
-        ry = top + (hh + 1 if cfg.show_date else 0)           # top of the time/tag row
+        top = max(0, (h - (row_h + dh + yh + (2 if cfg.show_date else 0))) // 2)
+        ry = top + (dh + 1 if cfg.show_date else 0)          # top of the time/tag row
         cy = ry + (row_h - th) // 2                           # the time and the tag are each centred in it
-        items = [(Sheen(time_node, period=3.0, band=max(14, th), strength=0, delay=1.0), tx, cy, tw, th)]
+        items = [(Sheen(time_node, period=3.0, band=max(14, th), strength=0, delay=1.0), cx, cy, tw, th)]
         if letters:
-            lx, sy = tx + tw + MERIDIEM_GAP, ry + (row_h - stack_h) // 2
+            lx, sy = cx + tw + MERIDIEM_GAP, ry + (row_h - stack_h) // 2
             ly = sy
             for node in letters:
                 cw, ch = node.measure()
                 items.append((node, lx + (lw - cw) // 2, ly, cw, ch))
                 ly += ch + STACK_GAP
         if date is not None and year is not None:
-            items.append((date, cx, top, dw, hh))
-            items.append((year, cx + block_w - yw, top, yw, hh))
+            dw, yw = date.measure()[0], year.measure()[0]
+            items.append((date, cx, top, dw, dh))
+            items.append((year, cx + block_w - yw, ry + row_h + 1, yw, yh))
         return render_tree(Absolute(items), w, h, t=ctx.elapsed)
