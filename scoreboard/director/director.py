@@ -145,6 +145,8 @@ class Director:
         return brightness_for(now, cfg.brightness, cfg.location, live=self.state in (AppState.LIVE, AppState.INTERMISSION))
 
     def frame(self, mono: float | None = None) -> Image.Image:
+        if sleep_mode_active(now, cfg.brightness):
+            return black_frame
         mono = _time.monotonic() if mono is None else mono
         if self._cursor is None:
             self._cursor = Cursor(AppState.BOOT, 0, mono)
