@@ -48,3 +48,12 @@ def brightness_for(now: datetime, cfg: BrightnessConfig, loc: LocationConfig, li
     if live and cfg.keep_bright_when_live:
         return cfg.day
     return cfg.night if is_night(now, cfg, loc) else cfg.day
+    
+def sleep_mode_active(
+    now: datetime,
+    cfg: BrightnessConfig,
+) -> bool:
+    if not cfg.sleep_mode:
+        return False
+
+    return _in_configured_window(now.time(), cfg)
