@@ -22,7 +22,7 @@ from ..data import Event, Snapshot, SnapshotStore
 from ..data.events import EventBus
 from ..plugins import Registry
 from ..render.profiles import profile_for
-from .brightness import brightness_for
+from .brightness import brightness_for, sleep_mode_active
 from .playlist import Cursor, advance, clamp
 from .state import PLAYLIST_STATES, AppState, compute_state, is_offline
 from .transitions import transition
@@ -145,16 +145,24 @@ class Director:
         return brightness_for(now, cfg.brightness, cfg.location, live=self.state in (AppState.LIVE, AppState.INTERMISSION))
 
     def frame(self, mono: float | None = None) -> Image.Image:
-        if sleep_mode_active(now, cfg.brightness):
-            return black_frame
         mono = _time.monotonic() if mono is None else mono
+
         if self._cursor is None:
             self._cursor = Cursor(AppState.BOOT, 0, mono)
             self._booted_at = mono
+    
         cfg = self._config.get()
         snap = self._snapshots.get()
+    
         self._pending.extend(self._events.drain())
         self._sync_state(snap, mono)
+    
+        if sleep_mode_active(self._now(cfg), cfg.brightness):
+            return Image.new(
+                "RGB",
+                (cfg.display.width, cfg.display.height),
+                (0, 0, 0),
+            )
 
         board, key, event, entry = self._select(cfg, snap, mono)
         # A new event on the board already showing is a switch too: a second goal must not
