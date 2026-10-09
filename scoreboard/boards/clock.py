@@ -3,7 +3,7 @@
 Layout follows v1's layout.json: the time is centred a little below the middle, the date sits
 2px above it aligned to its left edge, AM/PM stacks 2px to its right aligned to its top, and the
 weather line hangs at the bottom. With the ``old`` font (04B_24, v1's face) the time snaps to
-24 / 16 / 8 px and the small text is 8 px, exactly as v1 drew it.
+24 / 16 / 8 px, and ``pl`` is enlarged in whole-number steps. The date, AM/PM and weather use a 5-row bitmap face so the time can be large.
 """
 from __future__ import annotations
 
@@ -15,15 +15,18 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field, model_validator
 
 from ..isotime import parse_iso
-from ..render import Absolute, Text, load_font, render_tree
-from ..render.text import text_size
+from ..render import Absolute, Img, Text, load_font, render_tree
+from ..render.text import text_box, text_size
 from .base import BaseBoard, BoardContext
 
 CLOCK_FONTS = ("clock", "score", "block", "ari", "gothic", "upheaval", "camels", "cute", "old", "pixel", "pixelbold", "pl")
 MIN_CLOCK = 8
 OLD = "old"                         # 04B_24: a pixel font that is only sharp at multiples of 8
 OLD_SIZES = (24, 16, 8)             # v1 drew the time at 24 and everything else at 8
-OLD_SMALL = 8
+PL = "pl"                          # a bitmap face with only 6 and 12 px sizes: the time is scaled up instead
+PL_NATIVE = 12
+PL_SCALES = (4, 3, 2, 1)           # whole-number scales only, so the pixels stay sharp
+SMALL = 6                         # small text: 5 rows tall, so a big time still fits around it
 WIDEST_TIME = "88:88"
 WIDEST_DATE = "AUG 88 8888"
 WIDEST_WEATHER = "100F H100%"
@@ -68,11 +71,11 @@ def _load(name: str, size: int):
 
 
 def _date_font() -> ImageFont.ImageFont:
-    """Face for the date, AM/PM and weather: the bundled 5x8 bitmap face, whatever font the time uses.
+    """Face for the date, AM/PM and weather: a 5-row bitmap face, whatever font the time uses.
 
-    Same pixel height as v1's 04B_24 at 8. If that face is missing, step down to a smaller
-    bitmap face rather than crash the board."""
-    for name, size in (("pixel", OLD_SMALL), ("pl", 6), ("pixel", 6)):
+    Short enough that date + time + weather stack on a 32px panel with a large time. If the
+    face is missing, try the next one rather than crash the board."""
+    for name, size in (("pl", SMALL), ("pixel", SMALL), ("pixel", 7)):
         font = _load(name, size)
         if font is not None:
             return font
@@ -122,23 +125,39 @@ def _fit_text(text: str, font: ImageFont.ImageFont, width: int) -> str:
     return text
 
 
-def _sizes(family: str, height: int) -> list[int]:
-    """Candidate time sizes, largest first. 04B_24 only looks right at multiples of 8."""
+def _sizes(family: str, height: int) -> list[tuple[int, int]]:
+    """Candidate (font size, scale) pairs for the time, largest first.
+
+    04B_24 only looks right at multiples of 8. ``pl`` cannot grow, so it is drawn at its
+    native 12 px and enlarged by a whole number."""
     if family == OLD:
-        return [s for s in OLD_SIZES if s <= height] or [OLD_SIZES[-1]]
-    return list(range(height, MIN_CLOCK - 1, -1))
+        return [(s, 1) for s in OLD_SIZES if s <= height] or [(OLD_SIZES[-1], 1)]
+    if family == PL:
+        return [(PL_NATIVE, k) for k in PL_SCALES]
+    return [(s, 1) for s in range(height, MIN_CLOCK - 1, -1)]
+
+
+def _scaled_text(text: str, font: ImageFont.ImageFont, color: tuple[int, int, int], scale: int) -> Image.Image:
+    """``text`` drawn at the face's own size, cropped to its ink and enlarged by ``scale``
+    with nearest-neighbour so the pixels stay square."""
+    left, top, right, bottom = text_box(text, font)
+    img = Image.new("RGBA", (max(int(right), 1), max(int(bottom), 1)), (0, 0, 0, 0))
+    ImageDraw.Draw(img).text((0, 0), text, font=font, fill=(*color, 255))
+    img = img.crop((int(left), int(top), max(int(right), int(left) + 1), max(int(bottom), int(top) + 1)))
+    return img.resize((img.width * scale, img.height * scale), Image.NEAREST)
 
 
 @lru_cache(maxsize=32)
-def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, weather: bool, family: str) -> tuple[ImageFont.ImageFont, ImageFont.ImageFont]:
-    """Largest face of ``family`` whose whole block (date / time + AM/PM / weather) still fits the panel."""
+def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, weather: bool, family: str) -> tuple[ImageFont.ImageFont, ImageFont.ImageFont, int]:
+    """Largest face of ``family`` (and scale) whose whole block (date / time + AM/PM / weather) fits the panel."""
     sizes = _sizes(family, height)
     date = _date_font()
-    for size in sizes:
+    for size, scale in sizes:
         clock = _load(family, size)
         if clock is None:                       # this face is not installed: try the next size
             continue
         tw, th = text_size(WIDEST_TIME, clock)
+        tw, th = tw * scale, th * scale
         if meridiem:
             lw, sh = _stack_size(date)
             tw += MERIDIEM_GAP + lw
@@ -147,17 +166,17 @@ def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, w
             # v1 never shrank the time: it drew 24 whenever the time row itself fits the panel,
             # and the date and weather lines just tucked in around it.
             if tw <= width and th <= height:
-                return clock, date
+                return clock, date, scale
             continue
         block_w, block_h = tw, th
         for wanted, sample, gap in ((show_date, WIDEST_DATE, DATE_GAP), (weather, WIDEST_WEATHER, ROW_GAP)):
             if wanted:
                 sw, sh = text_size(sample, date)
                 block_w, block_h = max(block_w, sw), block_h + sh + gap
-        if block_w <= width - 2 * pad and block_h <= height - 2 * pad:
-            return clock, date
-    last = sizes[-1] if family == OLD else MIN_CLOCK
-    return _load(family, last) or _load("pixel", 8) or date, date
+        if block_w <= width - 2 * pad and block_h <= height:      # no vertical padding, as in v1
+            return clock, date, scale
+    last, scale = sizes[-1] if family in (OLD, PL) else (MIN_CLOCK, 1)
+    return _load(family, last) or _load("pixel", 8) or date, date, scale
 
 
 class ClockBoard(BaseBoard):
@@ -172,12 +191,16 @@ class ClockBoard(BaseBoard):
         twelve = cfg.format == "12h"
         weather_text = _weather_line(ctx.snapshot.get("weather.current"))
         alert_color = _alert_color(ctx.snapshot.get("weather.alerts"), now)
-        clock_font, date_font = _fonts(w, h, pad, cfg.show_date, twelve, bool(weather_text), cfg.font)
+        clock_font, date_font, scale = _fonts(w, h, pad, cfg.show_date, twelve, bool(weather_text), cfg.font)
 
         hour = (now.hour % 12 or 12) if twelve else now.hour
         time_str = f"{hour}:{now.minute:02d}" if twelve else f"{hour:02d}:{now.minute:02d}"
-        time_node = Text(time_str, clock_font, tuple(cfg.color))
-        tw, th = time_node.measure()
+        if scale > 1:
+            big = _scaled_text(time_str, clock_font, tuple(cfg.color), scale)
+            time_node, (tw, th) = Img(big), big.size
+        else:
+            time_node = Text(time_str, clock_font, tuple(cfg.color))
+            tw, th = time_node.measure()
 
         letters: list[Text] = []
         lw = stack_h = extra = 0
@@ -203,7 +226,7 @@ class ClockBoard(BaseBoard):
         time_x = max(pad, min((w - tw) // 2, w - pad - tw - extra))
         centre = round(h * (TIME_CENTER_WEATHER if weather else TIME_CENTER))
         top_limit = (dh + DATE_GAP) if date else 0
-        bottom_limit = h - pad - th - ((wh + ROW_GAP) if weather else 0)
+        bottom_limit = h - th - ((wh + ROW_GAP) if weather else 0)
         time_y = max(top_limit, min(centre - th // 2, bottom_limit))
 
         items = [(time_node, time_x, time_y, tw, th)]
