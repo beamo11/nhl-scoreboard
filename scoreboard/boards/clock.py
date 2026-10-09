@@ -133,6 +133,12 @@ def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, w
             lw, sh = _stack_size(date)
             tw += MERIDIEM_GAP + lw
             th = max(th, sh)
+        if family == OLD:
+            # v1 never shrank the time: it drew 24 whenever the time row itself fits the panel,
+            # and the date and weather lines just tucked in around it.
+            if tw <= width and th <= height:
+                return clock, date
+            continue
         block_w, block_h = tw, th
         for wanted, sample, gap in ((show_date, WIDEST_DATE, DATE_GAP), (weather, WIDEST_WEATHER, ROW_GAP)):
             if wanted:
