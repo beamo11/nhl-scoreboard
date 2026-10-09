@@ -13,8 +13,8 @@ from ..render.text import text_size
 from .base import BaseBoard, BoardContext
 
 CLOCK_FONTS = ("clock", "score", "block", "ari", "gothic", "upheaval", "camels", "cute", "old", "pixelbold", "pl")
-MIN_CLOCK = 8
-DATE_RATIO = 0.4          # date/year height relative to the time, as the old client had it
+MIN_CLOCK = 12
+DATE_RATIO = 0.2          # date/year height relative to the time, as the old client had it
 WIDEST_TIME = "88:88"     # size for the widest time so the digits don't resize every minute
 WIDEST_DATE, WIDEST_YEAR = "AUG 88", "8888"
 MERIDIEM_LETTERS = "APM"  # every letter the stacked tag can show: A/M or P/M
