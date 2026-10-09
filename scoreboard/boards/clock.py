@@ -1,4 +1,10 @@
-"""Clock board - v2 port of the v1 clock: time with stacked AM/PM, date line above."""
+"""Clock board - v2 port of the v1 clock.
+
+Layout follows v1's layout.json: the time is centred a little below the middle, the date sits
+2px above it aligned to its left edge, AM/PM stacks 2px to its right aligned to its top, and the
+weather line hangs at the bottom. With the ``old`` font (04B_24, v1's face) the time snaps to
+24 / 16 / 8 px and the small text is 8 px, exactly as v1 drew it.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -16,12 +22,19 @@ from .base import BaseBoard, BoardContext
 CLOCK_FONTS = ("clock", "score", "block", "ari", "gothic", "upheaval", "camels", "cute", "old", "pixelbold", "pl")
 MIN_CLOCK = 8
 DATE_RATIO = 0.4
+OLD = "old"                         # 04B_24: a pixel font that is only sharp at multiples of 8
+OLD_SIZES = (24, 16, 8)             # v1 drew the time at 24 and everything else at 8
+OLD_SMALL = 8
 WIDEST_TIME = "88:88"
 WIDEST_DATE = "AUG 88 8888"
 WIDEST_WEATHER = "100F H100%"
 MERIDIEM_GAP = 2
 STACK_GAP = 1
+DATE_GAP = 2                        # date bottom to time top, as in v1
 ROW_GAP = 1
+TIME_CENTER = 0.60                  # v1: time centred at 60% of the height (55% with the weather line)
+TIME_CENTER_WEATHER = 0.55
+WEATHER_BOTTOM = 0.95               # v1: weather line's bottom edge at 95%
 RETIRED_KEYS = frozenset({"show_meridiem", "flash_separator", "show_weather", "show_weather_alerts"})
 ALERT_SIZE = 7            # v1 used a 7px box in the bottom-right corner
 # Same level colours as the alerts board, so the marker matches the card.
@@ -47,7 +60,10 @@ class ClockConfig(BaseModel):
         return data
 
 
-def _date_font(clock_size: int, small: ImageFont.ImageFont) -> ImageFont.ImageFont:
+def _date_font(clock_size: int, small: ImageFont.ImageFont, family: str = "") -> ImageFont.ImageFont:
+    """Face for the date, AM/PM and weather. v1's 04B_24 at 8 px when the time uses it."""
+    if family == OLD:
+        return load_font(OLD, OLD_SMALL)
     size = max(6, round(clock_size * DATE_RATIO))
     if size >= 15:
         return load_font("pixelbold", size)
@@ -97,26 +113,35 @@ def _fit_text(text: str, font: ImageFont.ImageFont, width: int) -> str:
     return text
 
 
+def _sizes(family: str, height: int) -> list[int]:
+    """Candidate time sizes, largest first. 04B_24 only looks right at multiples of 8."""
+    if family == OLD:
+        return [s for s in OLD_SIZES if s <= height] or [OLD_SIZES[-1]]
+    return list(range(height, MIN_CLOCK - 1, -1))
+
+
 @lru_cache(maxsize=32)
 def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, weather: bool, family: str) -> tuple[ImageFont.ImageFont, ImageFont.ImageFont]:
     """Largest face of ``family`` whose whole block (date / time + AM/PM / weather) still fits the panel."""
     small = profile_for(width, height).label_font()
-    for size in range(height, MIN_CLOCK - 1, -1):
+    sizes = _sizes(family, height)
+    for size in sizes:
         clock = load_font(family, size)
-        date = _date_font(size, small)
+        date = _date_font(size, small, family)
         tw, th = text_size(WIDEST_TIME, clock)
         if meridiem:
             lw, sh = _stack_size(date)
             tw += MERIDIEM_GAP + lw
             th = max(th, sh)
         block_w, block_h = tw, th
-        for wanted, sample in ((show_date, WIDEST_DATE), (weather, WIDEST_WEATHER)):
+        for wanted, sample, gap in ((show_date, WIDEST_DATE, DATE_GAP), (weather, WIDEST_WEATHER, ROW_GAP)):
             if wanted:
                 sw, sh = text_size(sample, date)
-                block_w, block_h = max(block_w, sw), block_h + sh + ROW_GAP
+                block_w, block_h = max(block_w, sw), block_h + sh + gap
         if block_w <= width - 2 * pad and block_h <= height - 2 * pad:
             return clock, date
-    return load_font(family, MIN_CLOCK), _date_font(MIN_CLOCK, small)
+    last = sizes[-1] if family == OLD else MIN_CLOCK
+    return load_font(family, last), _date_font(last, small, family)
 
 
 class ClockBoard(BaseBoard):
@@ -144,7 +169,6 @@ class ClockBoard(BaseBoard):
             lw, stack_h = _stack_size(date_font)
             extra = MERIDIEM_GAP + lw
             letters = [Text(c, date_font, tuple(cfg.date_color)) for c in ("AM" if now.hour < 12 else "PM")]
-        row_h = max(th, stack_h)
 
         date = None
         dw = dh = 0
@@ -159,27 +183,33 @@ class ClockBoard(BaseBoard):
             weather = Text(fitted, date_font, tuple(cfg.date_color))
             ww, wh = weather.measure()
 
-        total_h = row_h + ((dh + ROW_GAP) if date else 0) + ((wh + ROW_GAP) if weather else 0)
-        y = max(0, (h - total_h) // 2)
-        time_x = (w - (tw + extra)) // 2
+        # Time: centred across, v1's percentage down, nudged only if the date or weather would be pushed off.
+        time_x = max(pad, min((w - tw) // 2, w - pad - tw - extra))
+        centre = round(h * (TIME_CENTER_WEATHER if weather else TIME_CENTER))
+        top_limit = (dh + DATE_GAP) if date else 0
+        bottom_limit = h - pad - th - ((wh + ROW_GAP) if weather else 0)
+        time_y = max(top_limit, min(centre - th // 2, bottom_limit))
 
-        items = []
+        items = [(time_node, time_x, time_y, tw, th)]
+
+        # Date: left edge on the time's left edge, DATE_GAP above it.
         if date is not None:
-            items.append((date, (w - dw) // 2, y, dw, dh))
-            y += dh + ROW_GAP
+            date_x = max(pad, min(time_x, w - pad - dw))
+            items.append((date, date_x, max(0, time_y - DATE_GAP - dh), dw, dh))
 
-        items.append((time_node, time_x, y + (row_h - th) // 2, tw, th))
+        # AM/PM: right of the time, top aligned with it (centred on it when taller).
         if letters:
             lx = time_x + tw + MERIDIEM_GAP
-            ly = y + (row_h - stack_h) // 2
+            ly = time_y + (th - stack_h) // 2 if stack_h > th else time_y
             for node in letters:
                 cw, ch = node.measure()
                 items.append((node, lx + (lw - cw) // 2, ly, cw, ch))
                 ly += ch + STACK_GAP
-        y += row_h + ROW_GAP
 
+        # Weather: centred, bottom edge at 95%, never touching the time.
         if weather is not None:
-            items.append((weather, (w - ww) // 2, y, ww, wh))
+            wy = max(round(h * WEATHER_BOTTOM) - wh, time_y + th + ROW_GAP)
+            items.append((weather, (w - ww) // 2, min(wy, h - wh), ww, wh))
 
         frame = render_tree(Absolute(items), w, h, t=ctx.elapsed)
 
