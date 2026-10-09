@@ -149,7 +149,7 @@ class TickerBoard(BaseBoard):
                     pregame  date chip over start time
                     final    outcome chip
         """
-        f7, f6 = load_font("pl", 12), ctx.profile.label_font()
+        f7, f6 = load_font("pixelbold", 10), ctx.profile.label_font()
         w, h = ctx.width, ctx.height
         row_h = h // 2
         logo_w = 18
