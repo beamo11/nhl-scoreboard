@@ -19,7 +19,7 @@ from ..render import Absolute, Text, load_font, render_tree
 from ..render.text import text_size
 from .base import BaseBoard, BoardContext
 
-CLOCK_FONTS = ("clock", "score", "block", "ari", "gothic", "upheaval", "camels", "cute", "old", "pixelbold", "pl")
+CLOCK_FONTS = ("clock", "score", "block", "ari", "gothic", "upheaval", "camels", "cute", "old", "pixel", "pixelbold", "pl")
 MIN_CLOCK = 8
 OLD = "old"                         # 04B_24: a pixel font that is only sharp at multiples of 8
 OLD_SIZES = (24, 16, 8)             # v1 drew the time at 24 and everything else at 8
@@ -59,9 +59,24 @@ class ClockConfig(BaseModel):
         return data
 
 
+def _load(name: str, size: int):
+    """load_font, or None when that face cannot be loaded (a missing bitmap file raises)."""
+    try:
+        return load_font(name, size)
+    except (OSError, ValueError):
+        return None
+
+
 def _date_font() -> ImageFont.ImageFont:
-    """Face for the date, AM/PM and weather: v1's 04B_24 at 8 px, whatever font the time uses."""
-    return load_font(OLD, OLD_SMALL)
+    """Face for the date, AM/PM and weather: the bundled 5x8 bitmap face, whatever font the time uses.
+
+    Same pixel height as v1's 04B_24 at 8. If that face is missing, step down to a smaller
+    bitmap face rather than crash the board."""
+    for name, size in (("pixel", OLD_SMALL), ("pl", 6), ("pixel", 6)):
+        font = _load(name, size)
+        if font is not None:
+            return font
+    return ImageFont.load_default()
 
 
 def _stack_size(font: ImageFont.ImageFont) -> tuple[int, int]:
@@ -120,7 +135,9 @@ def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, w
     sizes = _sizes(family, height)
     date = _date_font()
     for size in sizes:
-        clock = load_font(family, size)
+        clock = _load(family, size)
+        if clock is None:                       # this face is not installed: try the next size
+            continue
         tw, th = text_size(WIDEST_TIME, clock)
         if meridiem:
             lw, sh = _stack_size(date)
@@ -140,7 +157,7 @@ def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, w
         if block_w <= width - 2 * pad and block_h <= height - 2 * pad:
             return clock, date
     last = sizes[-1] if family == OLD else MIN_CLOCK
-    return load_font(family, last), date
+    return _load(family, last) or _load("pixel", 8) or date, date
 
 
 class ClockBoard(BaseBoard):
