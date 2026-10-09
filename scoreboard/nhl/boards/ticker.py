@@ -97,7 +97,7 @@ class TickerBoard(BaseBoard):
     def _card(self, g: dict[str, Any], ctx: BoardContext, cfg: TickerConfig) -> list:
         if ctx.height < 48 and ctx.width >= 96:
             return self._compact_card(g, ctx, cfg)
-        f7, f6 = load_font("camels", 7), ctx.profile.label_font()
+        f7, f6 = load_font("old", 8), ctx.profile.label_font()
         half = ctx.height // 2
         logo_w, win_h = 45, half - 1
         items = []
