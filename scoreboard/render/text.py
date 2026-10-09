@@ -1,109 +1,221 @@
-"""Font loading (cached) and text measuring."""
+"""Clock board - v2 port of the v1 clock.
+
+Layout follows v1's layout.json: the time is centred a little below the middle, the date sits
+2px above it aligned to its left edge, AM/PM stacks 2px to its right aligned to its top, and the
+weather line hangs at the bottom. With the ``old`` font (04B_24, v1's face) the time snaps to
+24 / 16 / 8 px and the small text is 8 px, exactly as v1 drew it.
+"""
 from __future__ import annotations
 
+from datetime import datetime
 from functools import lru_cache
-from pathlib import Path
+from typing import Literal
 
-from PIL import ImageFont
+from PIL import Image, ImageDraw, ImageFont
+from pydantic import BaseModel, Field, model_validator
 
-FONT_DIR = Path(__file__).parent / "fonts"
+from ..isotime import parse_iso
+from ..render import Absolute, Text, load_font, render_tree
+from ..render.text import text_size
+from .base import BaseBoard, BoardContext
 
-FONTS = {                       # vector fonts, sized freely (large text only)
-    "score": "score_font.ttf",
-    "clock": "clock_font.ttf",
-    "block": "minecraft_bold.ttf",
-    "camels": "mutant_camels.ttf",
-    "ari": "ari_w9500.ttf",
-    "gothic": "special_gothic.ttf",
-    "upheaval": "upheaval.ttf",
-    "cute": "CutePixel.ttf",
-    "old": "04B_24__.ttf",
-}
-# Hand-drawn bitmap fonts (public-domain X11 set) keyed by pixel height. These
-# are what make small text legible on an LED matrix; TrueType rasterised at
-# 6-10 px turns to mush.
-BITMAP = {
-    "pixel": {6: "tom-thumb", 7: "5x7", 8: "5x8", 9: "6x9", 10: "6x10", 12: "6x12", 13: "7x13", 15: "9x15B", 18: "9x18B", 20: "10x20"},
-    "pixelbold": {6: "tom-thumb", 7: "5x7", 8: "5x8", 9: "6x9", 10: "6x10", 12: "6x12", 13: "6x13B", 14: "7x13B", 15: "8x13B", 18: "9x18B", 20: "10x20"},
-    "pl": {6: "plfont-6", 12: "plfont-12"},          # the old client's default UI font (4px pitch, 5 tall)
-    "narrow": {6: "4x6", 7: "4x6", 8: "5x8", 9: "6x9", 10: "6x10", 12: "6x12", 13: "7x13", 15: "9x15B", 18: "9x18B", 20: "10x20"},
-}
-DEFAULT_FONT = "pixel"
-
-
-def is_bitmap(font: ImageFont.ImageFont) -> bool:
-    return not isinstance(font, ImageFont.FreeTypeFont)
+CLOCK_FONTS = ("clock", "score", "block", "ari", "gothic", "upheaval", "camels", "cute", "old", "pixel", "pixelbold", "pl")
+MIN_CLOCK = 8
+OLD = "old"                         # 04B_24: a pixel font that is only sharp at multiples of 8
+OLD_SIZES = (24, 16, 8)             # v1 drew the time at 24 and everything else at 8
+OLD_SMALL = 8
+WIDEST_TIME = "88:88"
+WIDEST_DATE = "AUG 88 8888"
+WIDEST_WEATHER = "100F H100%"
+MERIDIEM_GAP = 2
+STACK_GAP = 1
+DATE_GAP = 2                        # date bottom to time top, as in v1
+ROW_GAP = 1
+TIME_CENTER = 0.60                  # v1: time centred at 60% of the height (55% with the weather line)
+TIME_CENTER_WEATHER = 0.55
+WEATHER_BOTTOM = 0.95               # v1: weather line's bottom edge at 95%
+RETIRED_KEYS = frozenset({"show_meridiem", "flash_separator", "show_weather", "show_weather_alerts"})
+ALERT_SIZE = 7            # v1 used a 7px box in the bottom-right corner
+# Same level colours as the alerts board, so the marker matches the card.
+ALERT_COLORS = {"warning": (255, 40, 40), "watch": (255, 150, 0), "advisory": (255, 215, 0), "statement": (70, 150, 255)}
+ALERT_OTHER = (170, 170, 170)
 
 
-@lru_cache(maxsize=128)
-def load_font(name: str = DEFAULT_FONT, size: int = 8) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """Load a bundled font by family name (or a TTF path) at ``size`` px.
+class ClockConfig(BaseModel):
+    model_config = {"frozen": True, "extra": "forbid"}
+    format: Literal["12h", "24h"] = Field("12h", description="Hour format")
+    font: Literal[CLOCK_FONTS] = Field("block", description="Typeface for the time")
+    show_date: bool = True
+    color: tuple[int, int, int] = Field((0, 150, 150), description="Time colour (RGB)")
+    date_color: tuple[int, int, int] = Field((255, 0, 255), description="Date/year colour (RGB)")
 
-    Bitmap families snap to the largest bundled face that is <= size.
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_retired(cls, data):
+        """Settings from earlier drafts of this board are now always-on behaviour; ignore them
+        if they are still saved, rather than failing on extra="forbid"."""
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if k not in RETIRED_KEYS}
+        return data
+
+
+def _date_font() -> ImageFont.ImageFont:
+    """Face for the date, AM/PM and weather: the bundled 5x8 bitmap face, whatever font the time uses.
+
+    Same pixel height as v1's 04B_24 at 8, but a bitmap face always loads, whereas load_font
+    quietly falls back to a default font when a TrueType file cannot be found."""
+    return load_font("pixel", OLD_SMALL)
+
+
+def _stack_size(font: ImageFont.ImageFont) -> tuple[int, int]:
+    """Width and height of the two-letter vertical AM/PM stack."""
+    width = max(text_size(c, font)[0] for c in "APM")
+    return width, 2 * text_size("M", font)[1] + STACK_GAP
+
+
+def _weather_line(current: object) -> str:
+    """Compact temperature/humidity line, or "" when there is no weather data."""
+    if not isinstance(current, dict):
+        return ""
+    unit = (current.get("units") or {}).get("temp", "C")
+    parts = []
+    if current.get("temp") is not None:
+        parts.append(f"{current['temp']}{unit}")
+    if current.get("humidity") is not None:
+        parts.append(f"H{current['humidity']}%")
+    return " ".join(parts)
+
+
+def _alert_color(alerts: object, now: datetime) -> tuple[int, int, int] | None:
+    """Colour of the most serious alert still in force, or None.
+
+    The source publishes alerts most serious first and only re-checks expiry on its own
+    schedule, so lapsed ones are skipped here by ``now`` (as the alerts board does).
     """
-    family = BITMAP.get(name)
-    if family:
-        best = max((h for h in family if h <= size), default=min(family))
-        return ImageFont.load(str(FONT_DIR / "pil" / f"{family[best]}.pil"))
-    path = FONT_DIR / FONTS.get(name, name)
-    try:
-        return ImageFont.truetype(str(path), size)
-    except OSError:
-        return ImageFont.load_default()
+    if not isinstance(alerts, list):          # None means "unknown" / source off
+        return None
+    for alert in alerts:
+        if not isinstance(alert, dict):
+            continue
+        end = parse_iso(alert.get("expires"))
+        if end is not None and end <= now:
+            continue
+        return ALERT_COLORS.get(alert.get("level") or "other", ALERT_OTHER)
+    return None
 
 
-def text_box(text: str, font: ImageFont.ImageFont, antialias: bool = False) -> tuple[int, int, int, int]:
-    """Glyph box (l, t, r, b) for ``text`` drawn at (0, 0) with the "la" anchor.
-
-    Measured in the same render mode as drawing: 1-bit mode disables hinting
-    and changes advances, so measuring antialiased would clip. Uses the glyph
-    box rather than font metrics because pixel fonts often declare descenders
-    far larger than they draw.
-    """
-    if is_bitmap(font):
-        # PIL reports the character cell for bitmap faces (a 6-row box for tom-thumb's
-        # 5-row glyphs), so measure the rendered mask instead; the cell is the fallback
-        # for strings with no ink at all.
-        ink = font.getmask(text, mode="1").getbbox()
-        if ink is None:
-            return font.getbbox(text)
-        left, top, right, bottom = ink
-        if text[:1].isspace():                      # spaces at either end still take their advance,
-            left = 0                                # so "Alt: " keeps its gap before the value
-        if text[-1:].isspace():
-            right = font.getbbox(text)[2]
-        return left, top, right, bottom
-    mode = "L" if antialias else "1"
-    return font.getbbox(text, mode=mode, anchor="la")
+def _fit_text(text: str, font: ImageFont.ImageFont, width: int) -> str:
+    while text and text_size(text, font)[0] > width:
+        text = text[:-1]
+    return text
 
 
-def text_size(text: str, font: ImageFont.ImageFont, antialias: bool = False) -> tuple[int, int]:
-    """Tight (width, height) of the ink for ``text``."""
-    left, top, right, bottom = text_box(text, font, antialias)
-    return int(right - left), int(bottom - top)
+def _sizes(family: str, height: int) -> list[int]:
+    """Candidate time sizes, largest first. 04B_24 only looks right at multiples of 8."""
+    if family == OLD:
+        return [s for s in OLD_SIZES if s <= height] or [OLD_SIZES[-1]]
+    return list(range(height, MIN_CLOCK - 1, -1))
 
 
-def fit_font(text: str, name: str, max_width: int, start: int, minimum: int = 5):
-    """Largest size of ``name`` at which ``text`` fits within ``max_width``."""
-    for size in range(start, minimum - 1, -1):
-        font = load_font(name, size)
-        if text_size(text, font)[0] <= max_width:
-            return font
-    return load_font(name, minimum)
+@lru_cache(maxsize=32)
+def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, weather: bool, family: str) -> tuple[ImageFont.ImageFont, ImageFont.ImageFont]:
+    """Largest face of ``family`` whose whole block (date / time + AM/PM / weather) still fits the panel."""
+    sizes = _sizes(family, height)
+    date = _date_font()
+    for size in sizes:
+        clock = load_font(family, size)
+        tw, th = text_size(WIDEST_TIME, clock)
+        if meridiem:
+            lw, sh = _stack_size(date)
+            tw += MERIDIEM_GAP + lw
+            th = max(th, sh)
+        if family == OLD:
+            # v1 never shrank the time: it drew 24 whenever the time row itself fits the panel,
+            # and the date and weather lines just tucked in around it.
+            if tw <= width and th <= height:
+                return clock, date
+            continue
+        block_w, block_h = tw, th
+        for wanted, sample, gap in ((show_date, WIDEST_DATE, DATE_GAP), (weather, WIDEST_WEATHER, ROW_GAP)):
+            if wanted:
+                sw, sh = text_size(sample, date)
+                block_w, block_h = max(block_w, sw), block_h + sh + gap
+        if block_w <= width - 2 * pad and block_h <= height - 2 * pad:
+            return clock, date
+    last = sizes[-1] if family == OLD else MIN_CLOCK
+    return load_font(family, last), date
 
 
-def wrap_text(text: str, font: ImageFont.ImageFont, max_width: int, max_lines: int | None = None) -> list[str]:
-    """Greedy word wrap measured with the font that draws it. A word wider than the line
-    stands alone rather than splitting; ``max_lines`` drops the overflow."""
-    lines: list[str] = []
-    line = ""
-    for word in text.split():
-        candidate = f"{line} {word}".strip()
-        if line and text_size(candidate, font)[0] > max_width:
-            lines.append(line)
-            line = word
-        else:
-            line = candidate
-    if line:
-        lines.append(line)
-    return lines[:max_lines] if max_lines is not None else lines
+class ClockBoard(BaseBoard):
+    key = "clock"
+    title = "Clock"
+    config_model = ClockConfig
+
+    def render(self, ctx: BoardContext, cfg: ClockConfig) -> Image.Image:
+        w, h = ctx.width, ctx.height
+        pad = ctx.profile.pad
+        now = ctx.now
+        twelve = cfg.format == "12h"
+        weather_text = _weather_line(ctx.snapshot.get("weather.current"))
+        alert_color = _alert_color(ctx.snapshot.get("weather.alerts"), now)
+        clock_font, date_font = _fonts(w, h, pad, cfg.show_date, twelve, bool(weather_text), cfg.font)
+
+        hour = (now.hour % 12 or 12) if twelve else now.hour
+        time_str = f"{hour}:{now.minute:02d}" if twelve else f"{hour:02d}:{now.minute:02d}"
+        time_node = Text(time_str, clock_font, tuple(cfg.color))
+        tw, th = time_node.measure()
+
+        letters: list[Text] = []
+        lw = stack_h = extra = 0
+        if twelve:
+            lw, stack_h = _stack_size(date_font)
+            extra = MERIDIEM_GAP + lw
+            letters = [Text(c, date_font, tuple(cfg.date_color)) for c in ("AM" if now.hour < 12 else "PM")]
+
+        date = None
+        dw = dh = 0
+        if cfg.show_date:
+            date = Text(now.strftime("%b %d %Y").upper(), date_font, tuple(cfg.date_color))
+            dw, dh = date.measure()
+
+        weather = None
+        ww = wh = 0
+        if weather_text:
+            fitted = _fit_text(weather_text, date_font, w - 2 * pad - (ALERT_SIZE + 1 if alert_color else 0))
+            weather = Text(fitted, date_font, tuple(cfg.date_color))
+            ww, wh = weather.measure()
+
+        # Time: centred across, v1's percentage down, nudged only if the date or weather would be pushed off.
+        time_x = max(pad, min((w - tw) // 2, w - pad - tw - extra))
+        centre = round(h * (TIME_CENTER_WEATHER if weather else TIME_CENTER))
+        top_limit = (dh + DATE_GAP) if date else 0
+        bottom_limit = h - pad - th - ((wh + ROW_GAP) if weather else 0)
+        time_y = max(top_limit, min(centre - th // 2, bottom_limit))
+
+        items = [(time_node, time_x, time_y, tw, th)]
+
+        # Date: left edge on the time's left edge, DATE_GAP above it.
+        if date is not None:
+            date_x = max(pad, min(time_x, w - pad - dw))
+            items.append((date, date_x, max(0, time_y - DATE_GAP - dh), dw, dh))
+
+        # AM/PM: right of the time, top aligned with it (centred on it when taller).
+        if letters:
+            lx = time_x + tw + MERIDIEM_GAP
+            ly = time_y + (th - stack_h) // 2 if stack_h > th else time_y
+            for node in letters:
+                cw, ch = node.measure()
+                items.append((node, lx + (lw - cw) // 2, ly, cw, ch))
+                ly += ch + STACK_GAP
+
+        # Weather: centred, bottom edge at 95%, never touching the time.
+        if weather is not None:
+            wy = max(round(h * WEATHER_BOTTOM) - wh, time_y + th + ROW_GAP)
+            items.append((weather, (w - ww) // 2, min(wy, h - wh), ww, wh))
+
+        frame = render_tree(Absolute(items), w, h, t=ctx.elapsed)
+
+        if alert_color is not None:
+            size = ALERT_SIZE if w >= 64 and h >= 32 else 3
+            ImageDraw.Draw(frame).rectangle((w - size, h - size, w - 1, h - 1), fill=alert_color)
+        return frame
