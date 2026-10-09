@@ -7,6 +7,7 @@ weather line hangs at the bottom. With the ``old`` font (04B_24, v1's face) the 
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from functools import lru_cache
 from typing import Literal
@@ -25,7 +26,8 @@ OLD = "old"                         # 04B_24: a pixel font that is only sharp at
 OLD_SIZES = (24, 16, 8)             # v1 drew the time at 24 and everything else at 8
 PL = "pl"                          # a bitmap face with only 6 and 12 px sizes: the time is scaled up instead
 PL_NATIVE = 12
-PL_SCALES = (4, 3, 2, 1)           # whole-number scales only, so the pixels stay sharp
+PL_STEP = 4                        # scales move in quarter steps (1, 1.25, 1.5 ... 4)
+PL_BOOST = 1.3                     # go ~30% past the largest whole-number scale that fits, if there is room
 SMALL = 6                         # small text: 5 rows tall, so a big time still fits around it
 WIDEST_TIME = "88:88"
 WIDEST_DATE = "AUG 88 8888"
@@ -133,22 +135,30 @@ def _sizes(family: str, height: int) -> list[tuple[int, int]]:
     if family == OLD:
         return [(s, 1) for s in OLD_SIZES if s <= height] or [(OLD_SIZES[-1], 1)]
     if family == PL:
-        return [(PL_NATIVE, k) for k in PL_SCALES]
+        return [(PL_NATIVE, k / PL_STEP) for k in range(4 * PL_STEP, PL_STEP - 1, -1)]
     return [(s, 1) for s in range(height, MIN_CLOCK - 1, -1)]
 
 
-def _scaled_text(text: str, font: ImageFont.ImageFont, color: tuple[int, int, int], scale: int) -> Image.Image:
+def _boost(scale: float) -> float:
+    """The largest whole scale that fits, enlarged by PL_BOOST where the fit allows it."""
+    whole = max(1, int(scale))
+    target = min(scale, whole * PL_BOOST)
+    return math.floor(target * PL_STEP) / PL_STEP
+
+
+def _scaled_text(text: str, font: ImageFont.ImageFont, color: tuple[int, int, int], scale: float) -> Image.Image:
     """``text`` drawn at the face's own size, cropped to its ink and enlarged by ``scale``
-    with nearest-neighbour so the pixels stay square."""
+    with nearest-neighbour. Whole scales keep every pixel square; fractions make some columns
+    and rows one LED wider than their neighbours."""
     left, top, right, bottom = text_box(text, font)
     img = Image.new("RGBA", (max(int(right), 1), max(int(bottom), 1)), (0, 0, 0, 0))
     ImageDraw.Draw(img).text((0, 0), text, font=font, fill=(*color, 255))
     img = img.crop((int(left), int(top), max(int(right), int(left) + 1), max(int(bottom), int(top) + 1)))
-    return img.resize((img.width * scale, img.height * scale), Image.NEAREST)
+    return img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.NEAREST)
 
 
 @lru_cache(maxsize=32)
-def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, weather: bool, family: str) -> tuple[ImageFont.ImageFont, ImageFont.ImageFont, int]:
+def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, weather: bool, family: str) -> tuple[ImageFont.ImageFont, ImageFont.ImageFont, float]:
     """Largest face of ``family`` (and scale) whose whole block (date / time + AM/PM / weather) fits the panel."""
     sizes = _sizes(family, height)
     date = _date_font()
@@ -157,7 +167,7 @@ def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, w
         if clock is None:                       # this face is not installed: try the next size
             continue
         tw, th = text_size(WIDEST_TIME, clock)
-        tw, th = tw * scale, th * scale
+        tw, th = math.ceil(tw * scale), math.ceil(th * scale)
         if meridiem:
             lw, sh = _stack_size(date)
             tw += MERIDIEM_GAP + lw
@@ -174,7 +184,7 @@ def _fonts(width: int, height: int, pad: int, show_date: bool, meridiem: bool, w
                 sw, sh = text_size(sample, date)
                 block_w, block_h = max(block_w, sw), block_h + sh + gap
         if block_w <= width - 2 * pad and block_h <= height:      # no vertical padding, as in v1
-            return clock, date, scale
+            return clock, date, (_boost(scale) if family == PL else scale)
     last, scale = sizes[-1] if family in (OLD, PL) else (MIN_CLOCK, 1)
     return _load(family, last) or _load("pixel", 8) or date, date, scale
 
@@ -195,7 +205,7 @@ class ClockBoard(BaseBoard):
 
         hour = (now.hour % 12 or 12) if twelve else now.hour
         time_str = f"{hour}:{now.minute:02d}" if twelve else f"{hour:02d}:{now.minute:02d}"
-        if scale > 1:
+        if scale != 1:
             big = _scaled_text(time_str, clock_font, tuple(cfg.color), scale)
             time_node, (tw, th) = Img(big), big.size
         else:
