@@ -6,7 +6,7 @@ from functools import lru_cache
 from typing import Literal
 
 from PIL import Image, ImageDraw, ImageFont
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..isotime import parse_iso
 from ..render import Absolute, Text, load_font, profile_for, render_tree
@@ -22,6 +22,7 @@ WIDEST_WEATHER = "100F H100%"
 MERIDIEM_GAP = 2
 STACK_GAP = 1
 ROW_GAP = 1
+RETIRED_KEYS = frozenset({"show_meridiem", "flash_separator", "show_weather", "show_weather_alerts"})
 ALERT_SIZE = 7            # v1 used a 7px box in the bottom-right corner
 # Same level colours as the alerts board, so the marker matches the card.
 ALERT_COLORS = {"warning": (255, 40, 40), "watch": (255, 150, 0), "advisory": (255, 215, 0), "statement": (70, 150, 255)}
@@ -35,6 +36,15 @@ class ClockConfig(BaseModel):
     show_date: bool = True
     color: tuple[int, int, int] = Field((0, 150, 150), description="Time colour (RGB)")
     date_color: tuple[int, int, int] = Field((255, 0, 255), description="Date/year colour (RGB)")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_retired(cls, data):
+        """Settings from earlier drafts of this board are now always-on behaviour; ignore them
+        if they are still saved, rather than failing on extra="forbid"."""
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if k not in RETIRED_KEYS}
+        return data
 
 
 def _date_font(clock_size: int, small: ImageFont.ImageFont) -> ImageFont.ImageFont:
