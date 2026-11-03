@@ -10,6 +10,7 @@ function the tests can call directly.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -19,6 +20,7 @@ from fastapi import APIRouter
 from ..config import ConfigStore
 from ..data import SnapshotStore
 from ..data.store import Snapshot
+from ..spoilers import presentation_snapshot
 
 SPORTS = (("nhl", "NHL"), ("nfl", "NFL"), ("ncaaf", "College football"), ("mlb", "MLB"), ("ncaah", "College hockey"), ("ahl", "AHL"))
 MAX_FLIGHTS = 8
@@ -123,7 +125,8 @@ def alerts_summary(snap: Snapshot) -> list[dict[str, Any]] | None:
     return [_pick(a, ALERT_FIELDS) for a in alerts[:MAX_ALERTS]]
 
 
-def dashboard_summary(snap: Snapshot, today: str) -> dict[str, Any]:
+def dashboard_summary(snap: Snapshot, today: str, spoiler_teams: Iterable[str] = ()) -> dict[str, Any]:
+    snap = presentation_snapshot(snap, spoiler_teams)
     main = snap.get("main_event") or None
     return {
         "today": today,
@@ -142,6 +145,8 @@ def router(config: ConfigStore, snapshots: SnapshotStore) -> APIRouter:
 
     @api.get("")
     def dashboard() -> dict[str, Any]:
-        return dashboard_summary(snapshots.get(), local_today(config.get().location.timezone))
+        cfg = config.get()
+        spoiler_teams = cfg.sources.get("nhl", {}).get("spoiler_teams", ())
+        return dashboard_summary(snapshots.get(), local_today(cfg.location.timezone), spoiler_teams)
 
     return api

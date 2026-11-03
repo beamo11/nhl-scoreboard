@@ -22,6 +22,7 @@ from ..data import Event, Snapshot, SnapshotStore
 from ..data.events import EventBus
 from ..plugins import Registry
 from ..render.profiles import profile_for
+from ..spoilers import configured_spoiler_teams, presentation_snapshot, spoiler_event
 from .brightness import brightness_for, sleep_mode_active
 from .playlist import Cursor, advance, clamp
 from .state import PLAYLIST_STATES, AppState, compute_state, is_offline
@@ -154,7 +155,12 @@ class Director:
         cfg = self._config.get()
         snap = self._snapshots.get()
     
-        self._pending.extend(self._events.drain())
+        spoiler_teams = configured_spoiler_teams(cfg)
+        self._pending = [event for event in self._pending if not spoiler_event(event, spoiler_teams)]
+        self._pending.extend(event for event in self._events.drain() if not spoiler_event(event, spoiler_teams))
+        if self._active_event and spoiler_event(self._active_event[0], spoiler_teams):
+            self._active_event = None
+            self._cursor = Cursor(self._cursor.state, self._cursor.index, mono)
         self._sync_state(snap, mono)
     
         if sleep_mode_active(self._now(cfg), cfg.brightness):
@@ -428,7 +434,7 @@ class Director:
         # before the first frame has created the cursor.
         entered = self._active_event[2] if self._active_event else (self._cursor.entered_at if self._cursor else mono)
         return BoardContext(
-            snapshot=snap,
+            snapshot=presentation_snapshot(snap, configured_spoiler_teams(cfg)),
             profile=profile_for(cfg.display.width, cfg.display.height),
             width=cfg.display.width,
             height=cfg.display.height,

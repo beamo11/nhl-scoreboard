@@ -49,6 +49,8 @@ class NhlConfig(BaseModel):
     # offers the registry, via the schema's enum.
     favorites: list[str] = Field(["TOR"], description="Favourite teams, highest priority first",
                                  json_schema_extra={"x-widget": "team-picker", "items": {"type": "string", "enum": list(NHL_TEAMS)}})
+    spoiler_teams: list[str] = Field(default_factory=list, description="Hide scores and game events for these teams",
+                                     json_schema_extra={"x-widget": "team-picker", "items": {"type": "string", "enum": list(NHL_TEAMS)}})
     live_interval: float = Field(5.0, ge=2, le=60, description="Seconds between polls while a favourite is playing", json_schema_extra=ADVANCED)
     idle_interval: float = Field(60.0, ge=15, le=600, description="Seconds between polls otherwise", json_schema_extra=ADVANCED)
     standings_interval: float = Field(3600.0, ge=300, description="Seconds between standings refreshes", json_schema_extra=ADVANCED)
@@ -56,12 +58,12 @@ class NhlConfig(BaseModel):
     show_games_within_days: int = Field(2, ge=0, le=30, description="Only show the league slate (ticker) when it is this close; further-out games stay off the panel")
     follow_preseason: bool = Field(True, description="Treat your team's preseason games like any other game")
 
-    @field_validator("favorites", mode="before")
+    @field_validator("favorites", "spoiler_teams", mode="before")
     @classmethod
     def _upper_codes(cls, value: Any) -> Any:
         return [str(v).strip().upper() for v in value] if isinstance(value, list) else value
 
-    @field_validator("favorites")
+    @field_validator("favorites", "spoiler_teams")
     @classmethod
     def _team_codes(cls, value: list[str]) -> list[str]:
         for code in value:

@@ -91,10 +91,14 @@ def test_summary_when_nothing_is_published():
 def test_endpoint(tmp_path):
     config = ConfigStore(tmp_path / "config.json")
     store, events = populated_store(), EventBus()
+    config.update({"sources": {"nhl": {"spoiler_teams": ["TOR"]}}})
     reg = Registry(boards={b.key: b for b in (ClockBoard(),)})
     director = Director(config, store, reg, events)
     app = create_app(config, store, reg, director, PreviewHub())
     c = TestClient(app, headers={UI_HEADER: UI_TOKEN}, base_url="http://localhost")
     body = c.get("/api/dashboard").json()
     assert body["sports"][0]["sport"] == "nhl" and len(body["today"]) == 10
+    hidden = body["sports"][0]["days"][0]["games"][0]
+    assert hidden["phase"] == "pregame" and hidden["start_time_utc"] == "2026-04-11T23:00:00Z"
+    assert "score" not in hidden["away"] and "score" not in hidden["home"]
     assert body["holidays"][0]["name"] == "Easter"
