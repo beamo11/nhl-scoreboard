@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -103,6 +104,40 @@ async def test_source_polls_and_enriches(tmp_path):
     logos = [a["logo"] for a in nearby if a["logo"]]
     assert logos and all(Path(p).is_file() for p in logos)
     assert (tmp_path / "ACA.png").is_file()               # cached under the ICAO operator code
+
+
+@pytest.mark.asyncio
+async def test_operator_backfill_is_limited_and_uses_free_lookup_only(tmp_path):
+    log = SightingLog(tmp_path / "sightings.json")
+    log.record([{"hex": "a1", "callsign": "ACA123", "registration": "C-GABC", "type": "A320"}], time.time(), "2026-11-16")
+    source = FlightsSource(sightings=log)
+    async with httpx.AsyncClient() as http, respx.mock() as mock:
+        lookup = mock.get(url__regex=r"https://api\.adsbdb\.com/.*").mock(
+            return_value=httpx.Response(200, json=load("adsbdb_callsign.json")))
+        await source._backfill_operator(http, "2026-11-16")
+        await source._backfill_operator(http, "2026-11-16")
+
+    assert lookup.call_count == 1
+    row = log.airframes()[0]
+    assert row["operator"] == "Air Canada" and row["count"] == 1
+    assert log.operator_lookups_today("2026-11-16") == 1
+
+
+@pytest.mark.asyncio
+async def test_operator_backfill_respects_daily_budget(tmp_path):
+    today = "2026-11-16"
+    now = time.time()
+    log = SightingLog(tmp_path / "sightings.json")
+    log.record([{"hex": f"{i:02x}", "callsign": f"AC{i}", "type": "A320"}
+                for i in range(20)], now, today)
+    for i in range(20):
+        log.mark_operator_lookup(f"{i:02x}", now + i, today)
+    source = FlightsSource(sightings=log)
+    async with httpx.AsyncClient() as http, respx.mock() as mock:
+        lookup = mock.get(url__regex=r"https://api\.adsbdb\.com/.*").mock(
+            return_value=httpx.Response(200, json=load("adsbdb_callsign.json")))
+        await source._backfill_operator(http, today)
+    assert lookup.call_count == 0
 
 
 def test_boards_render():

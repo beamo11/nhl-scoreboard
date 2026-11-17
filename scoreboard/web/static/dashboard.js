@@ -145,8 +145,12 @@ const timestampText = (ts) => ts == null ? '—' : new Date(ts * 1000).toLocaleS
 export function AirframesPage() {
   const [rows, setRows] = useState(null);
   const [failed, setFailed] = useState(false);
+  const [history, setHistory] = useState(null);
+  const [historyFailed, setHistoryFailed] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('recent');
+  const [view, setView] = useState('airframes');
+  const [filterBy, setFilterBy] = useState(null);
   useEffect(() => {
     const tick = () => fetch('/api/flights/airframes').then(r => {
       if (!r.ok) throw new Error(`${r.status}`);
@@ -154,29 +158,112 @@ export function AirframesPage() {
     }).then(data => { setRows(data); setFailed(false); }).catch(() => setFailed(true));
     tick(); const id = setInterval(tick, 30000); return () => clearInterval(id);
   }, []);
+  useEffect(() => {
+    const tick = () => fetch('/api/flights/history').then(r => {
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.json();
+    }).then(data => { setHistory(data); setHistoryFailed(false); }).catch(() => setHistoryFailed(true));
+    tick(); const id = setInterval(tick, 60000); return () => clearInterval(id);
+  }, []);
   const needle = query.trim().toLowerCase();
-  const visible = (rows || []).filter(a => !needle || [a.hex, a.registration, a.type, a.operator].some(v => (v || '').toLowerCase().includes(needle)));
+  const visible = (rows || []).filter(a => filterBy
+    ? (filterBy.field === 'type' ? (a.type || 'Unknown') === filterBy.value : (a.operator || 'Unknown') === filterBy.value)
+    : !needle || (needle === 'unknown' ? !a.type
+      : [a.hex, a.registration, a.type, a.operator].some(v => (v || '').toLowerCase().includes(needle))));
   visible.sort((a, b) => sort === 'count' ? b.count - a.count || b.last_seen - a.last_seen
     : sort === 'registration' ? (a.registration || a.hex).localeCompare(b.registration || b.hex)
       : b.last_seen - a.last_seen || b.count - a.count);
+  const types = Object.values((rows || []).reduce((groups, a) => {
+    const type = a.type || 'Unknown';
+    const group = groups[type] || (groups[type] = { type, airframes: 0, sightings: 0, last_seen: 0 });
+    group.airframes += 1;
+    group.sightings += a.count;
+    group.last_seen = Math.max(group.last_seen, a.last_seen || 0);
+    return groups;
+  }, {})).sort((a, b) => b.airframes - a.airframes || b.sightings - a.sightings || a.type.localeCompare(b.type));
+  const operators = Object.values((rows || []).reduce((groups, a) => {
+    const operator = a.operator || 'Unknown';
+    const group = groups[operator] || (groups[operator] = { operator, airframes: 0, sightings: 0, last_seen: 0 });
+    group.airframes += 1;
+    group.sightings += a.count;
+    group.last_seen = Math.max(group.last_seen, a.last_seen || 0);
+    return groups;
+  }, {})).sort((a, b) => b.airframes - a.airframes || b.sightings - a.sightings || a.operator.localeCompare(b.operator));
   return html`<div class="card airframes">
     <div class="airframes-head"><div><h2>Airframes</h2>
       <p class="muted small">${rows ? `${rows.length.toLocaleString()} recorded` : 'Loading sightings…'}</p></div>
-      <div class="airframes-tools"><input type="search" placeholder="Search registration, hex, type or operator" value=${query} oninput=${e => setQuery(e.target.value)} />
+      <div class="airframes-tools"><div class="segmented" role="group" aria-label="Airframe view">
+        <button class=${view === 'airframes' ? 'active' : ''} aria-pressed=${view === 'airframes'} onclick=${() => setView('airframes')}>Airframes</button>
+        <button class=${view === 'types' ? 'active' : ''} aria-pressed=${view === 'types'} onclick=${() => setView('types')}>Types</button>
+        <button class=${view === 'operators' ? 'active' : ''} aria-pressed=${view === 'operators'} onclick=${() => setView('operators')}>Operators</button>
+        <button class=${view === 'activity' ? 'active' : ''} aria-pressed=${view === 'activity'} onclick=${() => setView('activity')}>Activity</button>
+      </div>${view === 'airframes' ? html`<input type="search" placeholder="Search registration, hex, type or operator" value=${query} oninput=${e => setQuery(e.target.value)} />
         <select aria-label="Sort airframes" value=${sort} onchange=${e => setSort(e.target.value)}>
           <option value="recent">Most recent</option><option value="count">Most sightings</option><option value="registration">Registration</option>
-        </select></div></div>
+        </select>` : ''}</div></div>
     ${failed ? html`<p class="error">Could not load the airframe log.</p>`
       : rows === null ? html`<p class="muted">Loading…</p>`
       : !rows.length ? html`<p class="muted">No airframes recorded yet. Enable flight sighting counts in Settings to start an inventory.</p>`
+      : view === 'activity' ? historyFailed ? html`<p class="error">Could not load flight history.</p>`
+        : history === null ? html`<p class="muted">Loading flight history…</p>` : html`<${ActivityView} data=${history} />`
+      : view === 'types' ? html`<div class="tablewrap"><table class="airframe-table type-table"><thead><tr>
+          <th>Type</th><th>Airframes</th><th>Total sightings</th><th>Most recent</th>
+        </tr></thead><tbody>${types.map(t => html`<tr>
+          <td><button class="type-link" onclick=${() => { setQuery(''); setFilterBy({ field: 'type', value: t.type }); setView('airframes'); }}>${t.type}</button></td>
+          <td>${t.airframes.toLocaleString()}</td><td>${t.sightings.toLocaleString()}</td><td>${timestampText(t.last_seen)}</td>
+        </tr>`)}</tbody></table></div>`
+      : view === 'operators' ? html`<div class="tablewrap"><table class="airframe-table type-table"><thead><tr>
+          <th>Operator / airline</th><th>Airframes</th><th>Total sightings</th><th>Most recent</th>
+        </tr></thead><tbody>${operators.map(o => html`<tr>
+          <td><button class="type-link" onclick=${() => { setQuery(''); setFilterBy({ field: 'operator', value: o.operator }); setView('airframes'); }}>${o.operator}</button></td>
+          <td>${o.airframes.toLocaleString()}</td><td>${o.sightings.toLocaleString()}</td><td>${timestampText(o.last_seen)}</td>
+        </tr>`)}</tbody></table></div>`
       : !visible.length ? html`<p class="muted">No airframes match “${query}”.</p>`
-      : html`<div class="tablewrap"><table class="airframe-table"><thead><tr>
+      : html`<div>${filterBy ? html`<p class="muted small">Filtered by ${filterBy.field}: ${filterBy.value} <button class="clear-filter" onclick=${() => setFilterBy(null)}>Clear</button></p>` : ''}
+        <div class="airframes-tools"><input type="search" placeholder="Search registration, hex, type or operator" value=${query} oninput=${e => { setQuery(e.target.value); setFilterBy(null); }} />
+          <select aria-label="Sort airframes" value=${sort} onchange=${e => setSort(e.target.value)}>
+            <option value="recent">Most recent</option><option value="count">Most sightings</option><option value="registration">Registration</option>
+          </select></div>
+        <div class="tablewrap"><table class="airframe-table"><thead><tr>
           <th>Airframe</th><th>Type</th><th>Airline / operator</th><th>Sightings</th><th>First seen</th><th>Most recent</th>
         </tr></thead><tbody>${visible.map(a => html`<tr>
           <td><b>${a.registration || a.hex}</b><div class="muted small">ICAO ${a.hex}</div></td>
           <td>${a.type || '—'}</td><td>${a.operator || '—'}</td><td>${a.count.toLocaleString()}</td>
           <td>${timestampText(a.first_seen)}</td><td>${timestampText(a.last_seen)}</td>
-        </tr>`)}</tbody></table></div>`}
+        </tr>`)}</tbody></table></div></div>`}
+  </div>`;
+}
+
+function ActivityView({ data }) {
+  const maxDay = Math.max(1, ...(data.days || []).map(d => d.visits));
+  const busyHours = (data.hours || []).filter(h => h.visits).sort((a, b) => b.visits - a.visits || a.hour - b.hour).slice(0, 8);
+  const maxHour = Math.max(1, ...busyHours.map(h => h.visits));
+  return html`<div class="activity-view">
+    <div class="activity-summary"><div><b>${data.last_7_days || 0}</b><span>visits · 7 days</span></div>
+      <div><b>${data.last_30_days || 0}</b><span>visits · 30 days</span></div>
+      <div><b>${data.visits || 0}</b><span>visits · retained history</span></div></div>
+    ${data.truncated ? html`<p class="muted small">Hourly and route rankings use the latest 5,000 visits; history is retained for up to 60 days.</p>` : ''}
+    <div class="activity-grid">
+      <section class="activity-block"><h3>Daily visits</h3>
+        ${data.days && data.days.length ? data.days.map(d => html`<div class="activity-bar-row">
+          <span>${d.date}</span><div class="activity-track"><i style=${`width:${Math.max(2, 100 * d.visits / maxDay)}%`}></i></div><b>${d.visits}</b>
+        </div>`) : html`<p class="muted small">No visit history yet.</p>`}
+      </section>
+      <section class="activity-block"><h3>Busiest hours</h3>
+        ${busyHours.length ? busyHours.map(h => html`<div class="activity-bar-row">
+          <span>${String(h.hour).padStart(2, '0')}:00</span><div class="activity-track"><i style=${`width:${Math.max(2, 100 * h.visits / maxHour)}%`}></i></div><b>${h.visits}</b>
+        </div>`) : html`<p class="muted small">No hourly visit history yet.</p>`}
+      </section>
+      <section class="activity-block"><h3>Common routes</h3>
+        ${data.routes && data.routes.length ? html`<table class="airframe-table"><thead><tr><th>Route</th><th>Visits</th></tr></thead><tbody>${data.routes.map(r => html`<tr><td>${r.route}</td><td>${r.visits}</td></tr>`)}</tbody></table>`
+          : html`<p class="muted small">No routes recorded yet.</p>`}
+      </section>
+      <section class="activity-block"><h3>Highest recorded altitude</h3>
+        ${data.highest_altitude && data.highest_altitude.length ? html`<table class="airframe-table"><thead><tr><th>Airframe</th><th>Type</th><th>Altitude</th><th>Recorded</th></tr></thead><tbody>
+          ${data.highest_altitude.map(a => html`<tr><td>${a.registration || a.hex}</td><td>${a.type || '—'}</td><td>${a.max_altitude_ft.toLocaleString()} ft</td><td>${timestampText(a.max_altitude_at)}</td></tr>`)}
+        </tbody></table>` : html`<p class="muted small">No altitude records yet.</p>`}
+      </section>
+    </div>
   </div>`;
 }
 

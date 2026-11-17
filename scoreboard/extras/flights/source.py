@@ -30,6 +30,9 @@ ADSB_LOL = "https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{nm}"
 ADSBDB_CALLSIGN = "https://api.adsbdb.com/v0/callsign/{cs}"
 AEROAPI_FLIGHT = "https://aeroapi.flightaware.com/aeroapi/flights/{ident}"
 POSITIVE_TTL, NEGATIVE_TTL = 6 * 3600, 3600
+OPERATOR_BACKFILL_INTERVAL = 5 * 60
+OPERATOR_BACKFILL_DAILY_LIMIT = 20
+OPERATOR_BACKFILL_RETRY = 30 * 24 * 3600
 COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 AIRLINE_SUFFIXES = (" airlines", " airline", " airways", " air lines", " aviation")
 
@@ -55,12 +58,13 @@ class FlightsConfig(BaseModel):
 
 # -- pure helpers -------------------------------------------------------------
 
-def _local_today(ctx: SourceContext) -> str:
+def _local_parts(ctx: SourceContext, timestamp: float) -> tuple[str, int]:
     tz = getattr(ctx, "timezone", None)
     try:
-        return datetime.now(ZoneInfo(tz)).date().isoformat() if tz else datetime.now().astimezone().date().isoformat()
+        local = datetime.fromtimestamp(timestamp, ZoneInfo(tz)) if tz else datetime.fromtimestamp(timestamp).astimezone()
     except Exception:
-        return datetime.now().astimezone().date().isoformat()
+        local = datetime.fromtimestamp(timestamp).astimezone()
+    return local.date().isoformat(), local.hour
 
 
 def compass(bearing: float | None) -> str:
@@ -156,6 +160,7 @@ class FlightsSource:
         self._sightings = sightings or SightingLog(DATA_ROOT / "flights" / SIGHTINGS_FILE)
         self._paid_day: date | None = None
         self._paid_count = 0
+        self._last_backfill_at = 0.0
 
     async def run(self, ctx: SourceContext) -> None:
         try:
@@ -177,6 +182,9 @@ class FlightsSource:
     def airframes(self) -> list[dict[str, Any]]:
         return self._sightings.airframes()
 
+    def history(self) -> dict[str, Any]:
+        return self._sightings.history()
+
     async def _poll_forever(self, ctx: SourceContext) -> None:
         while True:
             cfg: FlightsConfig = ctx.config  # type: ignore[assignment]
@@ -192,14 +200,20 @@ class FlightsSource:
                 aircraft = [a for a in (normalize_aircraft(r) for r in payload.get("ac") or []) if a]
                 if not cfg.include_on_ground:
                     aircraft = [a for a in aircraft if not a["on_ground"]]
+                poll_time = time.time()
+                today, hour = _local_parts(ctx, poll_time)
                 if cfg.count_sightings:                   # everything in range counts, not just the ones that fit the board
-                    today = _local_today(ctx)
-                    aircraft = self._sightings.record(aircraft, time.time(), today, cfg.visit_gap_minutes * 60)
+                    aircraft = self._sightings.record(aircraft, poll_time, today, cfg.visit_gap_minutes * 60, hour)
                     ctx.publish(self._sightings.stats(today), subkey="stats")
                 aircraft.sort(key=lambda a: a["distance_km"] if a["distance_km"] is not None else 1e9)
                 aircraft = aircraft[: cfg.max_aircraft]
                 if cfg.enrich_routes:
                     aircraft = [await self._enrich(ctx.http, a, cfg) for a in aircraft]
+                    for ac in aircraft:
+                        self._sightings.record_route(ac.get("hex", ""), ac.get("route"), time.time(), cfg.visit_gap_minutes * 60)
+                        self._sightings.fill_operator(ac.get("hex", ""), ac.get("airline"), time.time())
+                    if cfg.count_sightings:
+                        await self._backfill_operator(ctx.http, today)
                 if cfg.airline_logos:
                     aircraft = [{**a, "logo": await self._logos.path_for(ctx.http, a, ctx.log)} for a in aircraft]
                 aircraft = [{**a, "metric": cfg.units == "metric"} for a in aircraft]
@@ -233,6 +247,32 @@ class FlightsSource:
                 info = await self._flightaware(http, cs, cfg)
             self._cache[cs] = (now + (POSITIVE_TTL if info else NEGATIVE_TTL), info)
         return {**ac, **info} if info else ac
+
+    async def _backfill_operator(self, http: httpx.AsyncClient, today: str) -> None:
+        now = time.time()
+        if now - self._last_backfill_at < OPERATOR_BACKFILL_INTERVAL:
+            return
+        if self._sightings.operator_lookups_today(today) >= OPERATOR_BACKFILL_DAILY_LIMIT:
+            return
+        pending = self._sightings.next_operator_lookup(now, OPERATOR_BACKFILL_RETRY)
+        if pending is None:
+            return
+        hex_, callsign = pending
+        self._last_backfill_at = now
+        if not self._sightings.mark_operator_lookup(hex_, now, today):
+            return
+        cached = self._cache.get(callsign)
+        if cached and cached[0] > now:
+            info = cached[1]
+        else:
+            try:
+                info = parse_adsbdb(await self._get(http, ADSBDB_CALLSIGN.format(cs=callsign)))
+            except (httpx.HTTPError, ValueError):
+                info = None
+            self._cache[callsign] = (now + (POSITIVE_TTL if info else NEGATIVE_TTL), info)
+        if info:
+            self._sightings.fill_operator(hex_, info.get("airline"), now)
+            self._sightings.record_route(hex_, info.get("route"), now)
 
     def _paid_allowed(self, cfg: FlightsConfig) -> bool:
         today = date.today()

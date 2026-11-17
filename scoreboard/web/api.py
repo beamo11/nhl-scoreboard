@@ -160,6 +160,12 @@ def create_app(
         source = registry.sources.get("flights")
         return source.airframes() if source is not None and callable(getattr(source, "airframes", None)) else []
 
+    @app.get("/api/flights/history")
+    def flight_history() -> dict[str, Any]:
+        """Recent visit activity and derived route / altitude statistics."""
+        source = registry.sources.get("flights")
+        return source.history() if source is not None and callable(getattr(source, "history", None)) else {}
+
     def effective(cfg) -> dict[str, Any]:
         """Config as the app sees it: plugin sections filled in with each model's defaults.
 

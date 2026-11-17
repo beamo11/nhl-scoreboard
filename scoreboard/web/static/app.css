@@ -205,11 +205,31 @@ table.flights td { white-space:normal; }
 .airframes-head { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; margin-bottom:10px; }
 .airframes-head h2, .airframes-head p { margin:0; }
 .airframes-tools { display:flex; gap:8px; flex:1 1 420px; justify-content:flex-end; }
+.segmented { display:flex; flex:0 0 auto; border:1px solid #2a3340; border-radius:6px; overflow:hidden; }
+.segmented button { background:transparent; color:var(--muted); border-radius:0; padding:6px 10px; }
+.segmented button + button { border-left:1px solid #2a3340; }
+.segmented button.active { background:#2a3340; color:var(--fg); }
 .airframes-tools input { flex:1 1 260px; min-width:0; }
 .airframes-tools select { flex:0 0 auto; }
 table.airframe-table { border-collapse:collapse; font-size:13px; width:100%; min-width:760px; }
 table.airframe-table th { text-align:left; color:var(--muted); font-weight:500; font-size:12px; padding:7px 10px 7px 0; border-bottom:1px solid #2a3340; white-space:nowrap; }
 table.airframe-table td { padding:8px 10px 8px 0; border-bottom:1px solid #222a35; vertical-align:top; }
+.type-link { background:none; color:var(--accent); padding:0; text-align:left; }
+.type-link:hover { text-decoration:underline; }
+.clear-filter { background:none; color:var(--accent); padding:0 4px; }
+.activity-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:4px 0 12px; }
+.activity-summary div { display:flex; gap:8px; align-items:baseline; border-left:2px solid #37c4d9; padding-left:9px; }
+.activity-summary b { font-size:18px; }
+.activity-summary span { color:var(--muted); font-size:12px; }
+.activity-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.activity-block { min-width:0; border-top:1px solid #222a35; padding-top:10px; }
+.activity-block h3 { margin:0 0 8px; font-size:14px; }
+.activity-bar-row { display:grid; grid-template-columns:88px minmax(30px,1fr) 32px; align-items:center; gap:8px; font-size:12px; padding:3px 0; }
+.activity-bar-row > span { color:var(--muted); }
+.activity-bar-row > b { text-align:right; font-variant-numeric:tabular-nums; }
+.activity-track { height:8px; background:#252d37; border-radius:2px; overflow:hidden; }
+.activity-track i { display:block; height:100%; min-width:2px; background:#37c4d9; border-radius:2px; }
+.activity-block table.airframe-table { min-width:0; }
 .section h3 .editor-link { margin-left:8px; font-size:12px; font-weight:400; }
 .alerts { margin:0; padding:0; list-style:none; }
 .alerts li { display:flex; gap:10px; padding:4px 0; font-size:13px; align-items:flex-start; }
@@ -252,4 +272,10 @@ ul.drift li { margin:2px 0; }
   header nav { display:flex; flex:1 0 100%; flex-wrap:wrap; gap:2px; }
   nav a { padding:5px 7px; }
   main { padding:12px; }
+  .airframes-tools { flex-wrap:wrap; flex-basis:100%; justify-content:flex-start; }
+  .airframes-tools input { flex-basis:100%; }
+  .activity-grid { grid-template-columns:minmax(0,1fr); }
+  .activity-summary { gap:6px; }
+  .activity-summary div { display:block; }
+  .activity-summary b, .activity-summary span { display:block; }
 }

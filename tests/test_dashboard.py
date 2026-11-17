@@ -119,3 +119,20 @@ def test_airframes_endpoint_returns_the_sighting_log(tmp_path):
         "hex": "a1", "registration": "C-GABC", "type": "A320", "operator": "Air Canada", "count": 1,
         "first_seen": 1_800_000_000, "last_seen": 1_800_000_000,
     }]
+
+
+def test_flight_history_endpoint_returns_activity_summary(tmp_path):
+    config = ConfigStore(tmp_path / "config.json")
+    source = FlightsSource(sightings=SightingLog(tmp_path / "sightings.json"))
+    now = datetime.now().timestamp()
+    source._sightings.record([{"hex": "a1", "registration": "C-GABC", "type": "A320", "altitude_ft": 12000}],
+                             now, datetime.now().date().isoformat(), hour=14)
+    source._sightings.record_route("a1", "YYZ-YUL", now + 1)
+    store = SnapshotStore()
+    reg = Registry(sources={"flights": source}, boards={b.key: b for b in (ClockBoard(),)})
+    director = Director(config, store, reg, EventBus())
+    client = TestClient(create_app(config, store, reg, director, PreviewHub()), base_url="http://localhost")
+
+    body = client.get("/api/flights/history").json()
+    assert body["routes"] == [{"route": "YYZ-YUL", "visits": 1}]
+    assert body["highest_altitude"][0]["max_altitude_ft"] == 12000

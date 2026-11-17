@@ -1,6 +1,7 @@
 """The flights sighting log: visits per airframe, persisted, tolerant of a bad file."""
 
 import json
+import time
 
 from scoreboard.extras.flights.sightings import SightingLog
 
@@ -55,6 +56,49 @@ def test_airframes_returns_all_records_newest_first(tmp_path):
     assert [row["hex"] for row in rows] == ["a1", "b2"]
     assert rows[0] == {"hex": "a1", "registration": "C-GABC", "type": "C172", "operator": "", "count": 2,
                        "first_seen": T0, "last_seen": T0 + 4000}
+
+
+def test_operator_enrichment_persists_without_changing_sighting_stats(tmp_path):
+    log = SightingLog(tmp_path / "s.json", save_interval=0)
+    log.record([ac("a1", "C-GABC", callsign="ACA123")], T0, DAY)
+    log.mark_operator_lookup("a1", T0 + 10, DAY)
+    log.fill_operator("a1", "Air Canada", T0 + 11)
+
+    row = log.airframes()[0]
+    assert row["callsign"] == "ACA123" and row["operator"] == "Air Canada"
+    assert row["count"] == 1 and row["first_seen"] == T0 and row["last_seen"] == T0
+    assert log.operator_lookups_today(DAY) == 1
+    assert log.next_operator_lookup(T0 + 12, 30) is None
+    assert SightingLog(tmp_path / "s.json").airframes()[0]["operator"] == "Air Canada"
+
+
+def test_operator_enrichment_does_not_replace_known_operator(tmp_path):
+    log = SightingLog(tmp_path / "s.json")
+    log.record([ac("a1", "C-GABC", operator="Owner Name")], T0, DAY)
+    log.fill_operator("a1", "Airline Name", T0 + 10)
+    assert log.airframes()[0]["operator"] == "Owner Name"
+
+
+def test_history_aggregates_visits_hours_routes_and_altitude(tmp_path):
+    log = SightingLog(tmp_path / "s.json", save_interval=0)
+    now = time.time()
+    log.record([ac("a1", "C-GABC", altitude_ft=14000)], now, DAY, hour=15)
+    log.record([ac("a1", "C-GABC", altitude_ft=19000)], now + 60, DAY, hour=15)
+    log.record([ac("a1", "C-GABC", altitude_ft=11000), ac("b2", "N123AB", altitude_ft=9000)],
+               now + 2000, DAY, hour=9)
+    log.record_route("a1", "yyz-yul", now + 61)
+
+    summary = log.history(now + 2100)
+    assert summary["visits"] == 3 and summary["last_7_days"] == 3 and summary["last_30_days"] == 3
+    assert summary["hours"][9] == {"hour": 9, "visits": 2}
+    assert summary["hours"][15] == {"hour": 15, "visits": 1}
+    assert summary["routes"] == [{"route": "YYZ-YUL", "visits": 1}]
+    assert summary["highest_altitude"][0] == {"hex": "a1", "registration": "C-GABC", "type": "C172",
+                                               "max_altitude_ft": 19000, "max_altitude_at": now + 60}
+    assert summary["days"] == [{"date": DAY, "visits": 3}]
+
+    log.flush()
+    assert SightingLog(tmp_path / "s.json").history(now + 2100)["routes"] == summary["routes"]
 
 
 def test_debounced_save_and_flush(tmp_path):
