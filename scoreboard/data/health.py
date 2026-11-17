@@ -189,6 +189,7 @@ class TrackedHttp:
         self._clock = clock
 
     async def request(self, method: str, url: Any, **kwargs: Any) -> Any:
+        expected_statuses = kwargs.pop("_health_expected_statuses", ())
         started = self._clock()
         try:
             response = await self._client.request(method, url, **kwargs)
@@ -196,13 +197,17 @@ class TrackedHttp:
             self._health.record_fetch(self._key, ok=False, latency_ms=_ms(self._clock() - started),
                                       url=str(url), error=f"{type(exc).__name__}: {exc}")
             raise
-        error = None if not response.is_error else f"HTTP {response.status_code} for {response.url}"
+        error = None if response.status_code in expected_statuses or not response.is_error else f"HTTP {response.status_code} for {response.url}"
         self._health.record_fetch(self._key, ok=error is None, latency_ms=_ms(self._clock() - started),
                                   url=str(url), error=error)
         return response
 
     async def get(self, url: Any, **kwargs: Any) -> Any:
         return await self.request("GET", url, **kwargs)
+
+    async def get_expected(self, url: Any, *, statuses: tuple[int, ...], **kwargs: Any) -> Any:
+        """GET where specified statuses are normal outcomes, such as a missing optional asset."""
+        return await self.request("GET", url, _health_expected_statuses=statuses, **kwargs)
 
     async def post(self, url: Any, **kwargs: Any) -> Any:
         return await self.request("POST", url, **kwargs)

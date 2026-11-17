@@ -151,6 +151,32 @@ async def test_context_tracks_http_publish_and_sleep():
 
 
 @pytest.mark.asyncio
+async def test_context_expected_status_does_not_count_as_failure():
+    health = SourceHealth(clock=Clock())
+    async with httpx.AsyncClient() as http, respx.mock() as mock:
+        mock.get("https://example.test/optional.png").mock(return_value=httpx.Response(404))
+        ctx = SourceContext("flights", SnapshotStore(), lambda: None, http, health=health)
+        response = await ctx.http.get_expected("https://example.test/optional.png", statuses=(404,))
+
+    stats = health.get("flights")
+    assert response.status_code == 404
+    assert stats.fetches == 1 and stats.failures == 0 and stats.error_streak == 0
+    assert stats.last_error is None
+
+
+@pytest.mark.asyncio
+async def test_unexpected_404_still_counts_as_failure():
+    health = SourceHealth(clock=Clock())
+    async with httpx.AsyncClient() as http, respx.mock() as mock:
+        mock.get("https://example.test/data").mock(return_value=httpx.Response(404))
+        ctx = SourceContext("flights", SnapshotStore(), lambda: None, http, health=health)
+        await ctx.http.get("https://example.test/data")
+
+    stats = health.get("flights")
+    assert stats.failures == 1 and "404" in stats.last_error
+
+
+@pytest.mark.asyncio
 async def test_context_without_health_still_works():
     store = SnapshotStore()
     async with httpx.AsyncClient() as http:

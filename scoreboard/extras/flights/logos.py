@@ -73,7 +73,12 @@ class LogoFetcher:
         content = None
         for url in SOURCE_URLS:
             try:
-                resp = await http.get(url.format(code=code), timeout=FETCH_TIMEOUT, follow_redirects=True)
+                target = url.format(code=code)
+                get_expected = getattr(http, "get_expected", None)
+                if callable(get_expected):
+                    resp = await get_expected(target, statuses=(404,), timeout=FETCH_TIMEOUT, follow_redirects=True)
+                else:
+                    resp = await http.get(target, timeout=FETCH_TIMEOUT, follow_redirects=True)
             except httpx.HTTPError as exc:
                 log.warning("airline logo fetch failed for %s: %s", code, exc)
                 return self._miss(code, ERROR_TTL)

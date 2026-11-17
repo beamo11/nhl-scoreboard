@@ -13,7 +13,7 @@ import respx
 from PIL import Image
 
 from scoreboard.boards.base import BoardContext
-from scoreboard.data import Event, SnapshotStore
+from scoreboard.data import Event, SnapshotStore, SourceHealth
 from scoreboard.data.source import SourceContext
 from scoreboard.extras.flights.board import NearbyBoard, NearbyConfig, OverheadBoard, OverheadConfig
 from scoreboard.extras.flights.logos import LogoFetcher, codes_for, safe_code
@@ -187,6 +187,21 @@ async def test_logo_fetch_falls_back_caches_and_gives_up(tmp_path):
         assert await fetcher.path_for(http, other, logging.getLogger("test")) == ""
         assert await fetcher.path_for(http, other, logging.getLogger("test")) == ""
         assert missing.call_count == 2                     # both sets tried once, then remembered as a miss
+
+
+@pytest.mark.asyncio
+async def test_missing_logo_does_not_degrade_flight_source_health(tmp_path):
+    health = SourceHealth()
+    fetcher = LogoFetcher(tmp_path, tmp_path / "bundled")
+    async with httpx.AsyncClient() as http, respx.mock() as mock:
+        mock.get(url__regex=r".*/radarbox_logos/CGY\.png").mock(return_value=httpx.Response(404))
+        mock.get(url__regex=r".*/flightaware_logos/CGY\.png").mock(return_value=httpx.Response(404))
+        ctx = SourceContext("flights", SnapshotStore(), lambda: FlightsConfig(), http, health=health)
+        result = await fetcher.path_for(ctx.http, {"airline_icao": "CGY"}, logging.getLogger("test"))
+
+    assert result == ""
+    stats = health.get("flights")
+    assert stats.fetches == 2 and stats.failures == 0 and stats.error_streak == 0
 
 
 @pytest.mark.asyncio
