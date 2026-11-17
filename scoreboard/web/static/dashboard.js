@@ -140,6 +140,46 @@ function Flights({ rows }) {
   </tr>`)}</tbody></table>`;
 }
 
+const timestampText = (ts) => ts == null ? '—' : new Date(ts * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+
+export function AirframesPage() {
+  const [rows, setRows] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState('recent');
+  useEffect(() => {
+    const tick = () => fetch('/api/flights/airframes').then(r => {
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.json();
+    }).then(data => { setRows(data); setFailed(false); }).catch(() => setFailed(true));
+    tick(); const id = setInterval(tick, 30000); return () => clearInterval(id);
+  }, []);
+  const needle = query.trim().toLowerCase();
+  const visible = (rows || []).filter(a => !needle || [a.hex, a.registration, a.type, a.operator].some(v => (v || '').toLowerCase().includes(needle)));
+  visible.sort((a, b) => sort === 'count' ? b.count - a.count || b.last_seen - a.last_seen
+    : sort === 'registration' ? (a.registration || a.hex).localeCompare(b.registration || b.hex)
+      : b.last_seen - a.last_seen || b.count - a.count);
+  return html`<div class="card airframes">
+    <div class="airframes-head"><div><h2>Airframes</h2>
+      <p class="muted small">${rows ? `${rows.length.toLocaleString()} recorded` : 'Loading sightings…'}</p></div>
+      <div class="airframes-tools"><input type="search" placeholder="Search registration, hex, type or operator" value=${query} oninput=${e => setQuery(e.target.value)} />
+        <select aria-label="Sort airframes" value=${sort} onchange=${e => setSort(e.target.value)}>
+          <option value="recent">Most recent</option><option value="count">Most sightings</option><option value="registration">Registration</option>
+        </select></div></div>
+    ${failed ? html`<p class="error">Could not load the airframe log.</p>`
+      : rows === null ? html`<p class="muted">Loading…</p>`
+      : !rows.length ? html`<p class="muted">No airframes recorded yet. Enable flight sighting counts in Settings to start an inventory.</p>`
+      : !visible.length ? html`<p class="muted">No airframes match “${query}”.</p>`
+      : html`<div class="tablewrap"><table class="airframe-table"><thead><tr>
+          <th>Airframe</th><th>Type</th><th>Airline / operator</th><th>Sightings</th><th>First seen</th><th>Most recent</th>
+        </tr></thead><tbody>${visible.map(a => html`<tr>
+          <td><b>${a.registration || a.hex}</b><div class="muted small">ICAO ${a.hex}</div></td>
+          <td>${a.type || '—'}</td><td>${a.operator || '—'}</td><td>${a.count.toLocaleString()}</td>
+          <td>${timestampText(a.first_seen)}</td><td>${timestampText(a.last_seen)}</td>
+        </tr>`)}</tbody></table></div>`}
+  </div>`;
+}
+
 function Weather({ w }) {
   const c = w.current || {};
   const unit = (c.units && c.units.temp) ? `°${c.units.temp}` : '°';
@@ -174,7 +214,7 @@ export function AroundCard() {
   const sections = [];
   if (data.alerts) sections.push(html`<div class="section"><h3>Weather alerts</h3><${Alerts} rows=${data.alerts} /></div>`);
   if (data.weather) sections.push(html`<div class="section"><h3>Weather</h3><${Weather} w=${data.weather} /></div>`);
-  if (data.flights) sections.push(html`<div class="section"><h3>Planes nearby</h3><${FlightStats} stats=${data.flight_stats} /><${Flights} rows=${data.flights} /></div>`);
+  if (data.flights) sections.push(html`<div class="section"><h3>Planes nearby <a class="editor-link" href="#airframes">All airframes →</a></h3><${FlightStats} stats=${data.flight_stats} /><${Flights} rows=${data.flights} /></div>`);
   if (data.holidays) sections.push(html`<div class="section"><h3>Holidays</h3><${Holidays} rows=${data.holidays} today=${data.today} /></div>`);
   return html`<div class="card"><h2>Around you</h2>
     ${sections.length ? sections : html`<p class="muted">Turn on weather, weather alerts, flights or holidays in <a href="#settings">Settings</a> to see them here.</p>`}

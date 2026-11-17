@@ -4,7 +4,7 @@ import { Wizard } from './wizard.js';
 import { Settings } from './settings.js';
 import { Holidays } from './holidays.js';
 import { Simulator } from './sim.js';
-import { GamesCard, AroundCard } from './dashboard.js';
+import { AirframesPage, GamesCard, AroundCard } from './dashboard.js';
 import { Rotation } from './rotation.js';
 import { Select } from './select.js';
 import { waitForRestart } from './system.js';
@@ -373,7 +373,7 @@ function App() {
     addEventListener('hashchange', onHash); return () => removeEventListener('hashchange', onHash);
   }, []);
   const save = (patch) => api.patch('/api/config', patch).then(c => { setConfig(c); setError(null); }).catch(e => setError(e.message));
-  const pages = { dashboard: 'Dashboard', playlists: 'Boards', settings: 'Settings', sim: 'Simulator', diagnostics: 'Diagnostics', setup: 'Setup' };
+  const pages = { dashboard: 'Dashboard', airframes: 'Airframes', playlists: 'Boards', settings: 'Settings', sim: 'Simulator', diagnostics: 'Diagnostics', setup: 'Setup' };
   const showWizard = config && (!config.setup_complete || page === 'setup');
   return html`
     <header><h1>Scoreboard</h1><${SimBadge} /><${UpdateBadge} /><nav>${Object.entries(pages).map(([k, v]) => html`<a href=${'#' + k} class=${page === k ? 'active' : ''}>${v}</a>`)}</nav></header>
@@ -382,6 +382,7 @@ function App() {
       ${!config ? html`<p class="muted">Loading…</p>`
         : showWizard ? html`<${Wizard} config=${config} save=${save} Preview=${Preview} onDone=${() => { location.hash = '#dashboard'; }} />`
         : page === 'settings' ? html`<${Settings} config=${config} schema=${schema} boards=${boards} save=${save} />`
+        : page === 'airframes' ? html`<${AirframesPage} />`
         : page === 'playlists' ? html`<${Playlists} config=${config} boards=${boards} save=${save} />`
         : page === 'holidays' ? html`<${Holidays} />`
         : page === 'sim' ? html`<${Simulator} Preview=${Preview} />`

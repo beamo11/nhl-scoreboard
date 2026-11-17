@@ -7,6 +7,8 @@ from scoreboard.config import ConfigStore
 from scoreboard.data import SnapshotStore
 from scoreboard.data.events import EventBus
 from scoreboard.director import Director
+from scoreboard.extras.flights.sightings import SightingLog
+from scoreboard.extras.flights.source import FlightsSource
 from scoreboard.output import PreviewHub
 from scoreboard.plugins import Registry
 from scoreboard.web.api import create_app
@@ -102,3 +104,18 @@ def test_endpoint(tmp_path):
     assert hidden["phase"] == "pregame" and hidden["start_time_utc"] == "2026-04-11T23:00:00Z"
     assert "score" not in hidden["away"] and "score" not in hidden["home"]
     assert body["holidays"][0]["name"] == "Easter"
+
+
+def test_airframes_endpoint_returns_the_sighting_log(tmp_path):
+    config = ConfigStore(tmp_path / "config.json")
+    source = FlightsSource(sightings=SightingLog(tmp_path / "sightings.json"))
+    source._sightings.record([{"hex": "a1", "registration": "C-GABC", "type": "A320", "operator": "Air Canada"}], 1_800_000_000, TODAY)
+    store = SnapshotStore()
+    reg = Registry(sources={"flights": source}, boards={b.key: b for b in (ClockBoard(),)})
+    director = Director(config, store, reg, EventBus())
+    client = TestClient(create_app(config, store, reg, director, PreviewHub()), base_url="http://localhost")
+
+    assert client.get("/api/flights/airframes").json() == [{
+        "hex": "a1", "registration": "C-GABC", "type": "A320", "operator": "Air Canada", "count": 1,
+        "first_seen": 1_800_000_000, "last_seen": 1_800_000_000,
+    }]

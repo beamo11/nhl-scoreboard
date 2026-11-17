@@ -46,6 +46,17 @@ def test_persists_and_reloads(tmp_path):
     assert again.stats(DAY)["sightings"] == 3
 
 
+def test_airframes_returns_all_records_newest_first(tmp_path):
+    log = SightingLog(tmp_path / "s.json")
+    log.record([ac("a1", "C-GABC"), ac("b2", "N123AB", type="B738")], T0, DAY)
+    log.record([ac("a1", "C-GABC")], T0 + 4000, DAY)
+
+    rows = log.airframes()
+    assert [row["hex"] for row in rows] == ["a1", "b2"]
+    assert rows[0] == {"hex": "a1", "registration": "C-GABC", "type": "C172", "operator": "", "count": 2,
+                       "first_seen": T0, "last_seen": T0 + 4000}
+
+
 def test_debounced_save_and_flush(tmp_path):
     path = tmp_path / "s.json"
     log = SightingLog(path, save_interval=60)

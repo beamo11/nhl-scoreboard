@@ -202,6 +202,15 @@ table.flights td { white-space:normal; }
 .holidays { margin:0; padding:0; list-style:none; }
 .holidays li { display:flex; gap:10px; padding:3px 0; font-size:13px; }
 .flight-stats { font-size:13px; margin-bottom:6px; }
+.airframes-head { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; margin-bottom:10px; }
+.airframes-head h2, .airframes-head p { margin:0; }
+.airframes-tools { display:flex; gap:8px; flex:1 1 420px; justify-content:flex-end; }
+.airframes-tools input { flex:1 1 260px; min-width:0; }
+.airframes-tools select { flex:0 0 auto; }
+table.airframe-table { border-collapse:collapse; font-size:13px; width:100%; min-width:760px; }
+table.airframe-table th { text-align:left; color:var(--muted); font-weight:500; font-size:12px; padding:7px 10px 7px 0; border-bottom:1px solid #2a3340; white-space:nowrap; }
+table.airframe-table td { padding:8px 10px 8px 0; border-bottom:1px solid #222a35; vertical-align:top; }
+.section h3 .editor-link { margin-left:8px; font-size:12px; font-weight:400; }
 .alerts { margin:0; padding:0; list-style:none; }
 .alerts li { display:flex; gap:10px; padding:4px 0; font-size:13px; align-items:flex-start; }
 .chip.level-warning { background:#b3261e; color:#fff; }
@@ -237,3 +246,10 @@ ul.drift li { margin:2px 0; }
 .backup .versions li { padding:6px 0; border-top:1px solid #222a33; }
 .backup .versions li span:first-child { min-width:170px; }
 .backup .versions li button { margin-left:auto; }
+
+@media (max-width:640px) {
+  header { flex-wrap:wrap; gap:8px; padding:10px 12px; }
+  header nav { display:flex; flex:1 0 100%; flex-wrap:wrap; gap:2px; }
+  nav a { padding:5px 7px; }
+  main { padding:12px; }
+}

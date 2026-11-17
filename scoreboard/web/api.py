@@ -154,6 +154,12 @@ def create_app(
         """Per-source fetch health for the diagnostics page."""
         return health.to_list() if health is not None else []
 
+    @app.get("/api/flights/airframes")
+    def flight_airframes() -> list[dict[str, Any]]:
+        """Every airframe retained by the flights source's sighting log."""
+        source = registry.sources.get("flights")
+        return source.airframes() if source is not None and callable(getattr(source, "airframes", None)) else []
+
     def effective(cfg) -> dict[str, Any]:
         """Config as the app sees it: plugin sections filled in with each model's defaults.
 

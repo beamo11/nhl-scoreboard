@@ -180,6 +180,13 @@ class SightingLog:
             "regulars": [{k: v for k, v in {"hex": h, **e}.items() if k in REGULAR_FIELDS} for h, e in ranked[:TOP_N]],
         }
 
+    def airframes(self) -> list[dict[str, Any]]:
+        """All retained airframes, newest sighting first."""
+        if not self._loaded:
+            self.load()
+        ranked = sorted(self._airframes.items(), key=lambda kv: (-kv[1]["last_seen"], -kv[1]["count"]))
+        return [{"hex": hex_, **entry} for hex_, entry in ranked]
+
 
 def _details_changed(prev: dict[str, Any] | None, entry: dict[str, Any]) -> bool:
     """A registration, type or operator that just became known is worth writing down."""

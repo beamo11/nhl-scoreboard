@@ -174,6 +174,9 @@ class FlightsSource:
             raise ValueError("not a sightings log")
         self._sightings.replace(content)
 
+    def airframes(self) -> list[dict[str, Any]]:
+        return self._sightings.airframes()
+
     async def _poll_forever(self, ctx: SourceContext) -> None:
         while True:
             cfg: FlightsConfig = ctx.config  # type: ignore[assignment]
