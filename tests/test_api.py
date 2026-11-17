@@ -34,6 +34,16 @@ def test_status_and_config_roundtrip(tmp_path):
     assert config.get().brightness.day == 33
 
 
+def test_config_patch_removes_logo_override_entry(tmp_path):
+    c, config = client(tmp_path)
+    c.patch("/api/config", json={"logos": {"overrides": {"nhl:VAN": "secondary_on_black", "nhl:TOR": "default"}}})
+    response = c.patch("/api/config", json={"logos": {"overrides": {"nhl:VAN": None}}})
+
+    assert response.status_code == 200
+    assert response.json()["logos"]["overrides"] == {"nhl:TOR": "default"}
+    assert config.get().logos.overrides == {"nhl:TOR": "default"}
+
+
 def test_invalid_patch_is_422(tmp_path):
     c, _ = client(tmp_path)
     assert c.patch("/api/config", json={"brightness": {"day": 0}}).status_code == 422

@@ -222,7 +222,7 @@ function Editor({ field, onChange }) {
         ${entries.map(([k, v]) => html`<div class="map-row">
           <input type="text" value=${k} onchange=${e => e.target.value.trim() && rename(k, e.target.value.trim())} />
           <${Select} value=${v} options=${opts} onchange=${e => onChange({ ...map, [k]: e.target.value })} />
-          <a class="rm" onclick=${() => { const n = { ...map }; delete n[k]; onChange(n); }}>✕</a>
+          <a class="rm" onclick=${() => onChange({ ...map, [k]: null })}>✕</a>
         </div>`)}
         <div class="map-row">
           <input type="text" placeholder="+ add key, e.g. nhl:WSH"

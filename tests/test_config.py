@@ -24,6 +24,14 @@ def test_update_merges_validates_persists_and_notifies(config_store):
     assert reloaded.brightness.day == 42
 
 
+def test_update_can_remove_logo_override_entries(config_store):
+    config_store.update({"logos": {"overrides": {"nhl:VAN": "secondary_on_black", "nhl:TOR": "default"}}})
+    cfg = config_store.update({"logos": {"overrides": {"nhl:VAN": None}}})
+
+    assert cfg.logos.overrides == {"nhl:TOR": "default"}
+    assert ConfigStore(config_store.path).get().logos.overrides == {"nhl:TOR": "default"}
+
+
 def test_invalid_update_rejected_and_not_written(config_store):
     before = config_store.path.read_text()
     with pytest.raises(ValidationError):

@@ -46,10 +46,19 @@ class ConfigStore:
     def update(self, patch: dict[str, Any]) -> AppConfig:
         """Deep-merge ``patch`` into the current config, validate, persist, notify.
 
+        A null value in ``logos.overrides`` removes that override; maps otherwise merge.
         Raises ``pydantic.ValidationError`` on bad input; nothing is written then.
         """
         with self._lock:
+            patch = dict(patch)
+            logo_patch = patch.get("logos")
+            override_patch = logo_patch.get("overrides") if isinstance(logo_patch, dict) else None
+            removals = [key for key, value in override_patch.items() if value is None] if isinstance(override_patch, dict) else []
+            if removals:
+                patch["logos"] = {**logo_patch, "overrides": {key: value for key, value in override_patch.items() if value is not None}}
             merged = deep_merge(self._config.model_dump(mode="json"), patch)
+            for key in removals:
+                merged["logos"]["overrides"].pop(key, None)
             new = AppConfig.model_validate(merged)
             self._write(new)
             self._config = new
