@@ -220,7 +220,8 @@ class FlightsSource:
                 ctx.publish(aircraft, subkey="nearby")
                 ctx.publish([a for a in aircraft if is_overhead(a, cfg)] if cfg.overhead_alert else [], subkey="overhead")
             except (httpx.HTTPError, ValueError) as exc:
-                ctx.log.warning("flight poll failed: %s", exc)
+                detail = str(exc) or repr(exc)
+                ctx.log.warning("flight poll failed (%s): %s", type(exc).__name__, detail)
             await ctx.sleep(cfg.poll_seconds)
 
     async def _get(self, http: httpx.AsyncClient, url: str, **kw) -> dict[str, Any]:
