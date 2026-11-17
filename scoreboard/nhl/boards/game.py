@@ -209,9 +209,9 @@ class GameBoard(BaseBoard):
         ly = lay.logo_y.get(phase, lay.logo_y["live"])
         gx, gy, gw, gh = lay.gradient
         items: list = [
+            (Img(reflected_gradient(gw, gh)), gx, gy, gw, gh),
             (self._logo_node(g["away"]["abbrev"], "left", g=g), 0, ly, lay.logo_w, lay.logo_h),
             (self._logo_node(g["home"]["abbrev"], "right", delay=HOME_STAGGER, g=g), lay.home_logo_x, ly, lay.logo_w, lay.logo_h),
-            (Img(reflected_gradient(gw, gh)), gx, gy, gw, gh),
         ]
         if phase == "pregame":
             items += self._pregame(g, ctx, cfg)
