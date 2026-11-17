@@ -195,6 +195,22 @@ def test_sources_endpoint_without_health_is_empty(tmp_path):
     assert c.get("/api/sources").json() == []
 
 
+def test_resources_endpoint_reports_process_and_host_usage(tmp_path):
+    import os
+
+    c, _ = client(tmp_path)
+    response = c.get("/api/resources")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["process"]["pid"] == os.getpid()
+    assert set(data["process"]) == {"pid", "cpu_percent", "rss_bytes", "threads"}
+    assert set(data["host"]) == {
+        "cpu_percent", "memory_used_bytes", "memory_total_bytes", "root_used_bytes",
+        "root_total_bytes", "load_1m",
+    }
+    assert data["process"]["threads"] is None or data["process"]["threads"] > 0
+
+
 def test_ui_assets_must_revalidate(tmp_path):
     """The UI is a git checkout the OTA updater rewrites under a running browser.
 

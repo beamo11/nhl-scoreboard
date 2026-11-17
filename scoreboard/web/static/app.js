@@ -332,8 +332,56 @@ function Diagnostics() {
   const [lines, setLines] = useState([]);
   useEffect(() => { const t = () => api.get('/api/logs').then(setLines).catch(() => {}); t(); const id = setInterval(t, 3000); return () => clearInterval(id); }, []);
   return html`
+    <${Resources} />
     <div class="card"><h2>Data sources</h2><p class="muted small">Background fetchers and their cadence. Click a row for details.</p><${SourcesTable} /></div>
     <div class="card"><h2>Logs</h2><pre>${lines.join('\n')}</pre></div>`;
+}
+
+const fmtResourceBytes = (bytes) => {
+  if (bytes == null) return 'Unavailable';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = bytes, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`;
+};
+
+function Resources() {
+  const [enabled, setEnabled] = useState(false);
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    const tick = () => api.get('/api/resources').then(value => { if (active) setData(value); }).catch(() => {});
+    tick(); const id = setInterval(tick, 5000);
+    return () => { active = false; clearInterval(id); };
+  }, [enabled]);
+  const pct = (value) => value == null ? '—' : `${value.toFixed(1)}%`;
+  const tile = (label, value, percent = null) => html`<div class="resource-tile">
+    <span>${label}</span><strong>${value}</strong>
+    ${percent == null ? null : html`<div class="resource-meter" aria-label=${`${label}: ${pct(percent)}`}><i style=${{ width: `${Math.min(100, Math.max(0, percent))}%` }}></i></div>`}
+  </div>`;
+  const heading = html`<div class="resource-heading"><h2>System resources</h2>
+    <label class="resource-toggle"><input type="checkbox" checked=${enabled}
+      onchange=${event => setEnabled(event.currentTarget.checked)} /> Enable monitor</label></div>`;
+  if (!data) return html`<div class="card">${heading}<p class="muted">${enabled ? 'Reading current usage…' : 'Monitoring is off.'}</p></div>`;
+  const hostMemoryPercent = data.host.memory_total_bytes
+    ? data.host.memory_used_bytes * 100 / data.host.memory_total_bytes : null;
+  const diskPercent = data.host.root_total_bytes
+    ? data.host.root_used_bytes * 100 / data.host.root_total_bytes : null;
+  return html`<div class="card">${heading}
+    <p class="muted small">${enabled
+      ? 'Scoreboard process and whole-host readings. CPU is sampled between page updates; sources below show fetch activity.'
+      : 'Sampling paused; showing the last reading.'}</p>
+    <div class="resource-grid">
+      ${tile('Scoreboard CPU', pct(data.process.cpu_percent), data.process.cpu_percent)}
+      ${tile('Process memory', fmtResourceBytes(data.process.rss_bytes))}
+      ${tile('Process threads', data.process.threads ?? 'Unavailable')}
+      ${tile('Host CPU', pct(data.host.cpu_percent), data.host.cpu_percent)}
+      ${tile('Host memory', `${fmtResourceBytes(data.host.memory_used_bytes)} / ${fmtResourceBytes(data.host.memory_total_bytes)}`, hostMemoryPercent)}
+      ${tile('Root filesystem', `${fmtResourceBytes(data.host.root_used_bytes)} / ${fmtResourceBytes(data.host.root_total_bytes)}`, diskPercent)}
+      ${tile('Load average (1 min)', data.host.load_1m ?? 'Unavailable')}
+    </div>
+  </div>`;
 }
 
 function UpdateBadge() {

@@ -36,6 +36,7 @@ from .backup import router as backup_router
 from .dashboard import router as dashboard_router
 from .guard import AccessGuard
 from .holidays import router as holidays_router
+from .resources import ResourceMonitor
 from .sim import router as sim_router
 from .updater import Updater
 
@@ -131,6 +132,7 @@ def create_app(
     app = FastAPI(title="scoreboard", version=__version__)
     system = system or SystemControl()
     updater = updater or Updater(restart=system._restart)
+    resources = ResourceMonitor()
 
     @app.get("/api/status")
     def status() -> dict[str, Any]:
@@ -153,6 +155,11 @@ def create_app(
     def sources() -> list[dict[str, Any]]:
         """Per-source fetch health for the diagnostics page."""
         return health.to_list() if health is not None else []
+
+    @app.get("/api/resources")
+    def resource_usage() -> dict[str, Any]:
+        """Current process and host resource usage for the diagnostics page."""
+        return resources.sample()
 
     @app.get("/api/flights/airframes")
     def flight_airframes() -> list[dict[str, Any]]:
